@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Card Scanner</title>
+<style>
+/* ============================================================================
+   Integrated Optics brand styling
+   Primary colours  orange #ffa450 · green #34cb73 · violet #9575ee
+                    dark grey #4c4d4e · black #1d1d1b · white #ffffff
+   Backgrounds      light grey #efefef · grey #c0c0c0 · pastels #fff1e5 #e1f7ea #efeafc
+   Type             Arial (the brandbook's sanctioned alternative to
+                    ABC Camera / Steradian for tools that cannot embed them)
+   ========================================================================== */
+:root{
+  --orange:#ffa450; --green:#34cb73; --violet:#9575ee;
+  --dgrey:#4c4d4e;  --black:#1d1d1b; --white:#fff;
+  --lgrey:#efefef;  --grey:#c0c0c0;
+  --po:#fff1e5; --pg:#e1f7ea; --pv:#efeafc;
+  --line:#dedede;   --dim:#7a7b7c;
+  --err:#d64545;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:var(--lgrey); color:var(--black);
+  font:15px/1.45 Arial,"Helvetica Neue",Helvetica,Roboto,sans-serif;
+  letter-spacing:0;
+  display:flex; flex-direction:column; overflow:hidden;
+  padding-top:env(safe-area-inset-top);
+}
+
+/* --------------------------------------------------------------- header */
+header{
+  background:var(--black); color:var(--white); flex:0 0 auto;
+  padding:11px 14px 0;
+}
+.hrow{display:flex;align-items:center;gap:11px}
+.logo{height:30px;width:auto;flex:0 0 auto;display:block}
+header h1{
+  font-size:15px;margin:0;font-weight:bold;letter-spacing:.2px;flex:1;
+  color:var(--white)
+}
+header .badge{
+  font-size:11px;color:var(--black);background:var(--orange);
+  border-radius:20px;padding:3px 10px;font-weight:bold
+}
+/* brand pattern #1 strip */
+.strip{
+  height:15px;margin-top:9px;
+  background:
+    linear-gradient(90deg,rgba(29,29,27,0) 0%,rgba(29,29,27,.10) 38%,rgba(29,29,27,.75) 78%,rgba(29,29,27,1) 100%),
+    url("pattern.svg") repeat-x left center;
+  background-size:100% 100%, 13px 100%;
+}
+
+main{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:14px 14px 24px;-webkit-overflow-scrolling:touch}
+
+/* ------------------------------------------------------------------ nav */
+nav{
+  flex:0 0 auto; display:grid; grid-template-columns:repeat(4,1fr);
+  background:var(--white); border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav button{
+  background:none;border:0;color:var(--dim);font:inherit;font-size:11px;
+  padding:9px 2px 10px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  border-top:3px solid transparent;margin-top:-1px
+}
+nav button svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav button.on{color:var(--black);font-weight:bold;border-top-color:var(--orange)}
+
+.view{display:none}
+.view.on{display:block}
+
+/* ---------------------------------------------------------------- cards */
+.card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card h2{
+  font-size:11px;text-transform:uppercase;letter-spacing:.9px;
+  color:var(--orange);margin:0 0 12px;font-weight:bold;
+  padding-bottom:7px;border-bottom:1px solid var(--line)
+}
+.card h2.g{color:var(--green)}
+.card h2.v{color:var(--violet)}
+
+/* -------------------------------------------------------------- buttons */
+button.b{
+  width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-weight:bold;
+  background:var(--orange);color:var(--black);margin-bottom:9px
+}
+button.b.sec{background:var(--white);color:var(--black);border:1px solid var(--grey)}
+button.b.ok{background:var(--green);color:var(--black)}
+button.b.dark{background:var(--black);color:var(--white)}
+button.b:disabled{opacity:.45}
+button.b:active{filter:brightness(.94)}
+
+.row{display:flex;gap:9px}
+.row>*{flex:1;margin-bottom:9px}
+label{display:block;font-size:11px;color:var(--dgrey);margin:0 0 4px;letter-spacing:.3px}
+input,select,textarea{
+  width:100%;background:var(--white);border:1px solid var(--grey);border-radius:10px;
+  color:var(--black);font:inherit;padding:11px
+}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 2px var(--po)}
+textarea{min-height:88px;resize:vertical;font-size:13px}
+.f{margin-bottom:10px}
+.hint{font-size:12px;color:var(--dgrey);margin:6px 0 0}
+.mand{color:var(--orange);font-weight:bold}
+.pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;background:var(--po);border:1px solid var(--orange);color:var(--black);margin:0 5px 5px 0}
+
+/* ------------------------------- a field ERPNext or the standardiser flagged */
+input.needs,select.needs{border-color:var(--err);box-shadow:0 0 0 2px rgba(214,69,69,.14)}
+input.fixed{border-color:var(--green);box-shadow:0 0 0 2px var(--pg)}
+.fnote{font-size:11.5px;line-height:1.45;color:var(--err);margin:4px 0 0}
+.fnote.good{color:#1f8a4c}
+
+/* ------------------------------------------------ result of a sync attempt */
+.rep{margin:10px 0 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.rep>div{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border-top:1px solid var(--line);font-size:12.5px}
+.rep>div:first-child{border-top:none}
+.rep b{font-weight:600;min-width:82px;flex:none}
+/* the tick or the cross that says whether that document reached ERPNext */
+.rep .tick{flex:none;width:19px;height:19px;border-radius:50%;display:inline-flex;
+  align-items:center;justify-content:center;font-size:12px;font-weight:700;line-height:1;
+  margin-top:-1px}
+.rep .tick.yes{background:var(--green);color:#fff}
+.rep .tick.no{background:var(--err);color:#fff}
+.rep .tick.none{background:var(--lgrey);color:var(--dgrey);border:1px solid var(--grey);font-weight:400}
+.rep .note{display:block;margin-top:3px;color:#8a6a1c}
+.rep .att{font-size:11.5px}
+.rep .s{display:inline-block;font-size:10px;letter-spacing:.4px;text-transform:uppercase;
+  padding:2px 7px;border-radius:20px;flex:none}
+.rep .s.created{background:var(--pg);color:#1f8a4c;border:1px solid var(--green)}
+.rep .s.duplicate{background:var(--pv);color:#5b3fb0;border:1px solid var(--violet)}
+.rep .s.error{background:#fbe6e6;color:var(--err);border:1px solid var(--err)}
+.rep .s.off{background:var(--lgrey);color:var(--dgrey);border:1px solid var(--grey)}
+.rep .m{color:var(--dgrey);word-break:break-word}
+.rep .m i{font-style:normal;color:var(--black)}
+
+/* --------------------------------------------------------- checkbox row */
+.chkrow{display:flex;align-items:center;gap:10px;margin:-2px 0 12px;padding:9px 11px;
+  background:var(--po);border:1px solid var(--orange);border-radius:10px}
+.chkrow input{width:21px;height:21px;flex:0 0 auto;margin:0;accent-color:var(--orange)}
+.chkrow span{font-size:13px;line-height:1.3}
+
+/* ------------------------------------------------------------ card list */
+.item{display:flex;gap:11px;align-items:center;background:var(--white);border:1px solid var(--line);border-radius:13px;padding:10px;margin-bottom:9px}
+.item img{width:56px;height:40px;object-fit:cover;border-radius:7px;background:var(--lgrey);flex:0 0 auto}
+.item .t{flex:1;min-width:0}
+.item .t b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .t span{display:block;font-size:12px;color:var(--dgrey);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .chk{width:22px;height:22px;flex:0 0 auto;accent-color:var(--orange)}
+.empty{text-align:center;color:var(--dgrey);padding:34px 12px;font-size:14px}
+
+.spin{display:inline-block;width:15px;height:15px;border:2px solid rgba(29,29,27,.25);border-top-color:var(--black);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+#toast{
+  position:fixed;left:50%;bottom:78px;transform:translate(-50%,26px);opacity:0;
+  background:var(--black);color:var(--white);border:1px solid var(--black);border-left:4px solid var(--orange);
+  border-radius:11px;padding:11px 16px;
+  font-size:13px;max-width:88%;transition:.22s;pointer-events:none;z-index:60;text-align:center
+}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#toast.err{border-left-color:var(--err)}
+#toast.good{border-left-color:var(--green)}
+
+.preview{width:100%;border-radius:11px;border:1px solid var(--line);margin-bottom:11px;display:none}
+.sub{font-size:12px;color:var(--dgrey);margin:-4px 0 12px}
+.split{display:flex;gap:9px;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line)}
+.split:first-of-type{border-top:0}
+.split span{font-size:14px}
+.sw{position:relative;width:46px;height:26px;flex:0 0 auto}
+.sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0}
+.sw i{position:absolute;inset:0;background:var(--lgrey);border:1px solid var(--grey);border-radius:26px;transition:.2s}
+.sw i:after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--grey);transition:.2s}
+.sw input:checked+i{background:var(--po);border-color:var(--orange)}
+.sw input:checked+i:after{transform:translateX(20px);background:var(--orange)}
+.k{font-family:ui-monospace,"Courier New",monospace;font-size:12px;background:var(--lgrey);padding:1px 5px;border-radius:4px}
+details{background:var(--lgrey);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:11px}
+summary{font-size:13px;color:var(--dgrey);cursor:pointer}
+
+/* -------------------------------------------- long-press & swipe to move */
+.movable{position:relative}
+.lifted{
+  border-color:var(--violet)!important;
+  background:var(--pv)!important;
+  box-shadow:0 0 0 3px rgba(149,117,238,.35)!important;
+}
+.dropok{
+  border-color:var(--green)!important;
+  background:var(--pg)!important;
+  box-shadow:0 0 0 3px rgba(52,203,115,.4)!important;
+}
+#ghost{
+  position:fixed;z-index:80;pointer-events:none;display:none;
+  background:var(--violet);color:#fff;font:bold 13px/1 Arial,sans-serif;
+  padding:8px 12px;border-radius:9px;max-width:70vw;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  box-shadow:0 6px 18px rgba(0,0,0,.3);transform:translate(-50%,-160%)
+}
+#movehint{
+  position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:70;display:none;
+  background:var(--violet);color:#fff;font-size:12px;padding:7px 13px;border-radius:20px
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hrow">
+    <!-- Integrated Optics iO mark, rebuilt from the supplied logo file as
+         exact geometry (see make_logo.py). Reversed to white for the black
+         header; the keyline ring is drawn in the header colour. -->
+    <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 -1 150 141" role="img" aria-label="Integrated Optics"><path fill="#ffffff" d="M0.5 43H35.5 V139 H0.5 Z"/><circle cx="18" cy="16.5" r="17.5" fill="#ffffff"/><circle cx="83" cy="72.5" r="69.25" fill="none" stroke="#1d1d1b" stroke-width="5.5"/><circle cx="83" cy="72.5" r="49.25" fill="none" stroke="#ffffff" stroke-width="34.5"/><polygon points="113,13 122,4 146,28 113,61" fill="#fa9d11"/></svg>
+    <h1 id="ttl">Card Scanner</h1>
+    <span class="badge" id="cnt">0 cards</span>
+  </div>
+  <div class="strip"></div>
+</header>
+
+<main>
+
+  <!-- ============================================================ SCAN -->
+  <section class="view on" id="v-scan">
+    <div class="card">
+      <h2>Capture</h2>
+      <button class="b" id="btn-cam">Take a photo of a card</button>
+      <button class="b sec" id="btn-pick">Choose an existing picture</button>
+      <p class="hint">Text is recognised on the device. Nothing leaves the phone unless you switch on AI cleanup in Settings.</p>
+    </div>
+
+    <div class="card" id="box-form" style="display:none">
+      <h2>Recognised fields</h2>
+      <img class="preview" id="prev" alt="">
+      <div id="warn"></div>
+      <p class="hint" style="margin:0 0 12px">Text in the wrong box? Hold a field for a second, then slide your finger to the right box and let go.</p>
+
+      <div class="row">
+        <div><label>Salutation</label><input id="f-salutation" placeholder="Mr"></div>
+        <div><label>First name <span class="mand">*</span></label><input id="f-first_name"></div>
+      </div>
+      <div class="row">
+        <div><label>Middle name</label><input id="f-middle_name"></div>
+        <div><label>Last name</label><input id="f-last_name"></div>
+      </div>
+      <div class="f"><label>Designation</label><input id="f-designation"></div>
+      <div class="row">
+        <div><label>Department</label><input id="f-department"></div>
+        <div><label>Company</label><input id="f-company_name"></div>
+      </div>
+      <div class="f"><label>Email</label><input id="f-email" type="email" inputmode="email" autocapitalize="off"></div>
+
+      <label class="chkrow" for="f-newsletter">
+        <input type="checkbox" id="f-newsletter">
+        <span>Subscribe to newsletters</span>
+      </label>
+
+      <div class="f"><label>Second email</label><input id="f-email_secondary" type="email" inputmode="email" autocapitalize="off"></div>
+      <div class="row">
+        <div><label>Mobile</label><input id="f-mobile_no" inputmode="tel"></div>
+        <div><label>Phone</label><input id="f-phone" inputmode="tel"></div>
+      </div>
+      <div class="row">
+        <div><label>Fax</label><input id="f-fax" inputmode="tel"></div>
+        <div><label>Website</label><input id="f-website" autocapitalize="off"></div>
+      </div>
+      <div class="f">
+        <label>LinkedIn profile</label>
+        <input id="f-linkedin" autocapitalize="off" spellcheck="false" placeholder="https://www.linkedin.com/in/…">
+        <p class="hint" id="li-note" style="display:none"></p>
+      </div>
+
+      <h2 style="margin-top:16px">Address</h2>
+      <div class="f"><label>Address line 1 <span class="mand">*</span></label><input id="f-address_line1"></div>
+      <div class="f"><label>Address line 2</label><input id="f-address_line2"></div>
+      <div class="row">
+        <div><label>City <span class="mand">*</span></label><input id="f-city"></div>
+        <div><label>Post code</label><input id="f-pincode" autocapitalize="characters"></div>
+      </div>
+      <div class="row">
+        <div><label>State / county</label><input id="f-state" list="dl-regions"></div>
+        <div><label>Country <span class="mand">*</span></label><input id="f-country" list="dl-countries"></div>
+      </div>
+      <p class="hint">Fields marked <span class="mand">*</span> are mandatory in the ERPNext import templates. An address row is exported only when line 1, city and country are filled in.</p>
+      <button class="b sec" id="btn-norm" style="margin-top:4px">Standardise country, region and phone numbers</button>
+
+      <h2 class="g" style="margin-top:16px">Synchronise with ERPNext</h2>
+      <div class="f"><label>Organisation record</label>
+        <select id="f-sync_doctype">
+          <option>Customer</option><option>Supplier</option><option>Lead</option><option>Prospect</option>
+        </select>
+      </div>
+      <div class="split"><span>Organisation</span>
+        <label class="sw"><input type="checkbox" id="f-sync_org"><i></i></label>
+      </div>
+      <div class="split"><span>Contact</span>
+        <label class="sw"><input type="checkbox" id="f-sync_contact"><i></i></label>
+      </div>
+      <div class="split"><span>Address</span>
+        <label class="sw"><input type="checkbox" id="f-sync_address"><i></i></label>
+      </div>
+      <div id="sync-stat"></div>
+      <button class="b" id="btn-sync-one" style="margin-top:10px">Send this card to ERPNext</button>
+      <p class="hint">The organisation is written first so the contact and the address can be linked to it. A record that already exists is left untouched and reported as a duplicate.</p>
+
+      <details style="margin-top:14px">
+        <summary>Manual link and notes</summary>
+        <div class="row" style="margin-top:9px">
+          <div><label>Link doctype</label>
+            <select id="f-link_doctype">
+              <option value="">— none —</option>
+              <option>Customer</option><option>Supplier</option><option>Lead</option>
+              <option>Prospect</option><option>Sales Partner</option><option>Company</option>
+            </select>
+          </div>
+          <div><label>Link name</label><input id="f-link_name" placeholder="exact record ID"></div>
+        </div>
+        <div class="f"><label>Notes</label><textarea id="f-notes"></textarea></div>
+        <p class="hint">Used by the Excel export. The direct sync above sets its own links.</p>
+      </details>
+
+      <details>
+        <summary>Raw recognised text</summary>
+        <textarea id="f-raw_text" style="margin-top:9px"></textarea>
+        <button class="b sec" id="btn-reparse" style="margin-top:9px">Parse this text again</button>
+      </details>
+
+      <button class="b ok" id="btn-save">Save card</button>
+      <button class="b sec" id="btn-ai">Clean up with AI</button>
+      <button class="b sec" id="btn-cancel">Discard</button>
+    </div>
+  </section>
+
+  <!-- =========================================================== CARDS -->
+  <section class="view" id="v-cards">
+    <div class="card">
+      <h2>Saved cards</h2>
+      <div class="row">
+        <button class="b sec" id="btn-all" style="margin:0">Select all</button>
+        <button class="b sec" id="btn-none" style="margin:0">Clear</button>
+      </div>
+      <p class="hint" id="sel-info">Ticked cards are the ones that get exported.</p>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <!-- ========================================================== EXPORT -->
+  <section class="view" id="v-export">
+    <div class="card">
+      <h2>Export for ERPNext</h2>
+      <p class="sub">Builds your own import templates, ready to drop into <span class="k">Data Import</span>.</p>
+      <div id="ex-stat"></div>
+      <button class="b" id="btn-export">Create Excel files</button>
+      <button class="b sec" id="btn-share" disabled>Share / send to Synology Drive</button>
+      <p class="hint">Files are written to <span class="k">Documents/CardScanner</span> on the phone. Point Synology Drive at that folder to sync them automatically.</p>
+    </div>
+    <div class="card">
+      <h2 class="g">What you get</h2>
+      <p class="hint" style="margin:0 0 8px">
+        <span class="pill">Contact.xlsx</span> your Contact template, one row per card<br>
+        <span class="pill">Address.xlsx</span> your Address template, one row per complete address<br>
+        <span class="pill">Cards.xlsx</span> plain backup sheet with everything, including company and website
+      </p>
+      <p class="hint">Import Contact first, then Address. Leave the ID column empty so ERPNext creates new records. The LinkedIn profile goes into the <span class="k">linkedin</span> column and the newsletter tick sets <span class="k">unsubscribed</span> to 0 (unticked sets it to 1). The Contact template has no company column, so the company name is kept in Cards.xlsx and in the address title.</p>
+    </div>
+    <div class="card">
+      <h2 class="g">Send straight to ERPNext</h2>
+      <p class="sub">Uses the three switches saved on each ticked card.</p>
+      <div id="bulk-stat"></div>
+      <button class="b" id="btn-sync-all">Sync selected cards</button>
+      <p class="hint">Set the address and the credentials in Settings first. Duplicates are skipped, and anything ERPNext refuses is listed with the field that has to be fixed by hand.</p>
+    </div>
+    <div class="card">
+      <h2 class="v">Housekeeping</h2>
+      <button class="b sec" id="btn-mark">Mark selected as exported</button>
+      <button class="b sec" id="btn-del">Delete selected cards</button>
+    </div>
+  </section>
+
+  <!-- ======================================================== SETTINGS -->
+  <section class="view" id="v-set">
+    <div class="card">
+      <h2>Defaults</h2>
+      <div class="f"><label>Default country</label><input id="s-country"></div>
+      <div class="f"><label>Address type</label>
+        <select id="s-atype">
+          <option>Office</option><option>Billing</option><option>Shipping</option>
+          <option>Personal</option><option>Plant</option><option>Postal</option>
+          <option>Shop</option><option>Subsidiary</option><option>Warehouse</option><option>Other</option>
+        </select>
+      </div>
+      <div class="f"><label>Contact status</label>
+        <select id="s-status"><option>Open</option><option>Passive</option><option>Replied</option></select>
+      </div>
+      <div class="f"><label>Main language</label>
+        <select id="s-lang"><option value="">— empty —</option><option>English</option><option>German</option><option>Lithuanian</option><option>Other</option></select>
+      </div>
+      <div class="split"><span>Mark contacts as primary</span>
+        <label class="sw"><input type="checkbox" id="s-primary"><i></i></label>
+      </div>
+      <div class="split"><span>Tick “Subscribe to newsletters” by default</span>
+        <label class="sw"><input type="checkbox" id="s-news"><i></i></label>
+      </div>
+      <div class="split"><span>Standardise country, region and phone automatically</span>
+        <label class="sw"><input type="checkbox" id="s-norm"><i></i></label>
+      </div>
+      <p class="hint">Country names are matched against your ERPNext territory list, region abbreviations such as <span class="k">CA</span> are written out in full, and phone numbers get the international code of the card's country. A number with no country to go on is left exactly as printed and flagged.</p>
+    </div>
+
+    <div class="card">
+      <h2 class="g">ERPNext connection</h2>
+      <div class="f"><label>ERPNext address</label>
+        <input id="s-erp-url" autocapitalize="off" spellcheck="false" inputmode="url" placeholder="https://erp.example.com">
+      </div>
+      <div class="f"><label>Sign in with</label>
+        <select id="s-erp-mode">
+          <option value="token">API key and secret</option>
+          <option value="login">Email and password</option>
+        </select>
+      </div>
+      <div id="erp-token">
+        <div class="f"><label>API key</label><input id="s-erp-key" autocapitalize="off" spellcheck="false"></div>
+        <div class="f"><label>API secret</label><input id="s-erp-secret" type="password" autocapitalize="off" spellcheck="false"></div>
+      </div>
+      <div id="erp-login" style="display:none">
+        <div class="f"><label>Email</label><input id="s-erp-usr" type="email" autocapitalize="off" spellcheck="false"></div>
+        <div class="f"><label>Password</label><input id="s-erp-pwd" type="password" autocapitalize="off" spellcheck="false"></div>
+      </div>
+      <div class="f"><label>Default organisation record</label>
+        <select id="s-erp-org">
+          <option>Customer</option><option>Supplier</option><option>Lead</option><option>Prospect</option>
+        </select>
+      </div>
+      <p class="hint" style="margin-bottom:6px">New cards start with these switches:</p>
+      <div class="split"><span>Organisation</span>
+        <label class="sw"><input type="checkbox" id="s-sync-org"><i></i></label>
+      </div>
+      <div class="split"><span>Contact</span>
+        <label class="sw"><input type="checkbox" id="s-sync-contact"><i></i></label>
+      </div>
+      <div class="split"><span>Address</span>
+        <label class="sw"><input type="checkbox" id="s-sync-address"><i></i></label>
+      </div>
+      <div class="split"><span>Attach the card photo to the contact</span>
+        <label class="sw"><input type="checkbox" id="s-erp-attach"><i></i></label>
+      </div>
+      <div class="split"><span>Add missing salutations and job titles to ERPNext</span>
+        <label class="sw"><input type="checkbox" id="s-erp-masters"><i></i></label>
+      </div>
+      <p class="hint">The photo is stored as a private attachment on the contact. If ERPNext does not yet know a salutation, gender or job title from a card, the app can add it to the matching list; countries, territories and departments are never invented and are reported instead.</p>
+      <div id="erp-test"></div>
+      <button class="b sec" id="btn-erp-test" style="margin-top:10px">Test the connection</button>
+      <p class="hint">Create the key and secret in ERPNext under <span class="k">User → API Access → Generate Keys</span>. Credentials are kept only on this phone. Use an <span class="k">https</span> address so nothing travels in the clear.</p>
+    </div>
+
+    <div class="card">
+      <h2 class="g">AI cleanup (optional)</h2>
+      <div class="split"><span>Enabled</span>
+        <label class="sw"><input type="checkbox" id="s-ai"><i></i></label>
+      </div>
+      <div class="split"><span>Also look for a LinkedIn profile</span>
+        <label class="sw"><input type="checkbox" id="s-li"><i></i></label>
+      </div>
+      <div class="f" style="margin-top:10px"><label>Provider</label>
+        <select id="s-prov"><option value="openai">OpenAI compatible</option><option value="anthropic">Anthropic</option></select>
+      </div>
+      <div class="f"><label>Endpoint</label><input id="s-url" autocapitalize="off" spellcheck="false"></div>
+      <div class="f"><label>Model</label><input id="s-model" autocapitalize="off" spellcheck="false"></div>
+      <div class="f"><label>API key</label><input id="s-key" type="password" autocapitalize="off" spellcheck="false"></div>
+      <p class="hint">The key is stored only on this phone. When AI cleanup is on, the recognised text of a card is sent to the endpoint you configure so it can repair typical OCR mistakes (l/i, 0/O, missing dots in domains). Leave it off to stay completely offline.</p>
+      <p class="hint">The LinkedIn lookup asks the same model for the person's public profile URL. Models cannot browse LinkedIn, so a returned address is a suggestion: it is marked as unverified and you should tap it to check before exporting.</p>
+      <button class="b sec" id="btn-save-set" style="margin-top:10px">Save settings</button>
+    </div>
+
+    <div class="card">
+      <h2 class="v">About</h2>
+      <p class="hint">Card Scanner <span id="ver">1.2</span> — business card capture with ERPNext-ready Excel export and direct ERPNext synchronisation. On-device text recognition, standardised countries, regions and phone numbers. Styled to the Integrated Optics brandbook.</p>
+    </div>
+  </section>
+
+</main>
+
+<nav>
+  <button data-v="scan" class="on"><svg viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M7 12h10"/></svg>Scan</button>
+  <button data-v="cards"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 10h5M6 14h8"/></svg>Cards</button>
+  <button data-v="export"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>Export</button>
+  <button data-v="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.5-2.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6 2 2 0 1 1 14 4.6 1.7 1.7 0 0 0 16.9 5.8l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4Z"/></svg>Settings</button>
+</nav>
+
+<div id="toast"></div>
+<div id="ghost"></div>
+<div id="movehint">Slide onto a field and let go</div>
+
+<datalist id="dl-countries"></datalist>
+<datalist id="dl-regions"></datalist>
+
+<script src="xlsx.full.min.js"></script>
+<script src="geo.js"></script>
+<script src="norm.js"></script>
+<script src="net.js"></script>
+<script src="erp.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

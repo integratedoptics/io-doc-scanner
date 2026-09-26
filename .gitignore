@@ -1,0 +1,14 @@
+# Android
+android/CardScanner/**/build/
+android/CardScanner/.gradle/
+android/CardScanner/local.properties
+*.iml
+.idea/
+
+# iOS / Xcode
+ios/CardScanner/**/DerivedData/
+ios/CardScanner/**/xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
