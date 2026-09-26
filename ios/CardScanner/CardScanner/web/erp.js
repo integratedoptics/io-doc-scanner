@@ -53,7 +53,11 @@ function request(method, url, headers, body, timeout) {
 var cfg = {
 	url: "", mode: "token", key: "", secret: "", usr: "", pwd: "",
 	attach: true,      /* upload the card photo to the contact */
-	masters: true      /* create a missing Salutation / Gender / Designation */
+	masters: true,     /* create a missing Salutation / Gender / Designation */
+	/* This instance's Supplier Type is a Link to its own configurable list,
+	   not the stock Company/Individual pair — there is no safe value to
+	   guess from a business card, so it has to come from Settings. */
+	supplierType: ""
 };
 var loggedIn = false;
 
@@ -70,6 +74,7 @@ function configure(s) {
 	cfg.pwd = String(s.erp_pwd || "");
 	cfg.attach = s.erp_attach !== false;
 	cfg.masters = s.erp_masters !== false;
+	cfg.supplierType = String(s.erp_supplier_type || "").trim();
 	if (changed) { loggedIn = false; meta = {}; known = {}; }
 }
 
@@ -236,7 +241,7 @@ var LABEL_TO_FIELD = {
 	"postal code": "pincode", "pincode": "pincode", "zip": "pincode",
 	"country": "country", "territory": "country",
 	"address type": "address_line1", "address title": "company_name",
-	"linkedin": "linkedin", "website": "website"
+	"linkedin": "linkedin", "website": "website", "supplier type": "company_name"
 };
 
 /* A Link rejection names the target doctype, not the field. */
@@ -247,7 +252,8 @@ var LINK_DOCTYPE_TO_FIELD = {
 	"Customer Group": "company_name", "Supplier Group": "company_name",
 	"Industry Type": "company_name", "Language": "",
 	"Customer": "company_name", "Supplier": "company_name",
-	"Lead": "company_name", "Prospect": "company_name"
+	"Lead": "company_name", "Prospect": "company_name",
+	"Supplier Type": "company_name"
 };
 
 function fieldFromMessage(msg) {
@@ -347,6 +353,13 @@ function login() {
 function apiUrl(doctype, name, query) {
 	return cfg.url + "/api/resource/" + encodeURIComponent(doctype) +
 		(name ? "/" + encodeURIComponent(name) : "") + (query || "");
+}
+
+/* A whitelisted Frappe method call (as opposed to a /api/resource/<doctype>
+   REST call) — used for things with no doctype endpoint of their own, such
+   as frappe.model.rename_doc for merging two documents. */
+function methodUrl(name) {
+	return cfg.url + "/api/method/" + name;
 }
 
 function getList(doctype, filters, fields, limit) {
@@ -529,9 +542,21 @@ var FALLBACK_LINKS = {
 	Contact: { salutation: "Salutation", gender: "Gender" },
 	Address: { country: "Country" },
 	Customer: { territory: "Territory", customer_group: "Customer Group" },
-	Supplier: { supplier_group: "Supplier Group", country: "Country" },
+	Supplier: { supplier_group: "Supplier Group", country: "Country",
+		supplier_type: "Supplier Type" },
 	Lead: { territory: "Territory", country: "Country", salutation: "Salutation" },
-	Prospect: { territory: "Territory", industry: "Industry Type" }
+	Prospect: { territory: "Territory", industry: "Industry Type" },
+	/* Accounts Document (purchase invoice / customs declaration / CD invoice /
+	   shipping invoice bundle) — see accdoc.js. Kept here too so clean() still
+	   validates these Link fields when the API user lacks DocType read access
+	   and describe() falls back to this table instead of live metadata. */
+	"Accounts Document": {
+		supplier: "Supplier", cd_supplier: "Supplier", cd_provider: "Supplier",
+		shipping_service_provider: "Supplier", customer: "Customer",
+		purchase_order_reference: "Purchase Order",
+		sales_invoice_reference: "Sales Invoice",
+		parent_document: "Accounts Document", amended_from: "Accounts Document"
+	}
 };
 
 /* Checks a payload against the doctype before it is sent: drops fields the
@@ -672,7 +697,14 @@ function orgDoc(doctype, f, territory) {
 		if (territory) d.territory = territory;
 	} else if (doctype === "Supplier") {
 		d.supplier_name = name;
-		d.supplier_type = f.company_name ? "Company" : "Individual";
+		/* Supplier Type is a Link to this instance's own "Supplier Type" list
+		   (not the stock Company/Individual pair), so there is no safe value
+		   to guess from a business card — it has to come from Settings, and
+		   is left out entirely (causing a clear MandatoryError) if unset,
+		   rather than guessing a value ERPNext will reject anyway. */
+		if (cfg.supplierType) d.supplier_type = cfg.supplierType;
+		if (f.website) d.website = f.website;
+		if (f.country_field || territory) d.country = f.country_field || territory;
 	} else if (doctype === "Lead") {
 		d.lead_name = (f.first_name + " " + f.last_name).trim() || name;
 		d.first_name = f.first_name || "";
@@ -771,6 +803,66 @@ function attachImage(doctype, name, dataUrl, label) {
 		content: base64
 	}, []).then(function (fileName) {
 		return { state: "created", name: fileName };
+	}).catch(function (e) {
+		return { state: "error",
+			errors: e.errors || [{ field: "", message: e.message || String(e) }] };
+	});
+}
+
+/* Updates fields on an existing document. Used to fill in a later section
+   (Customs Declaration / CD Invoice / Shipping Invoice) of an Accounts
+   Document that already exists, rather than creating a new record. */
+function updateDoc(doctype, name, patch) {
+	return login().then(function () {
+		return request("PUT", apiUrl(doctype, name), authHeaders(true),
+			JSON.stringify(patch), 60);
+	}).then(function (r) {
+		if (r.status >= 200 && r.status < 300) {
+			var j = JSON.parse(r.body || "{}");
+			return j.data || null;
+		}
+		var e = new Error("ERPNext rejected updating " + doctype);
+		e.errors = toErrors(r.status, r.body, doctype);
+		e.status = r.status;
+		throw e;
+	});
+}
+
+/* Uploads a file (a scanned PDF, typically) and, when fieldname is given,
+   writes the resulting file_url back into that Attach field on the parent
+   document. An Attach field stores a URL string on the document itself, so
+   creating the File record alone is not enough for it to show as attached
+   in that specific field — ERPNext also needs the field written. */
+function attachFile(doctype, name, dataUrl, filename, fieldname) {
+	if (!dataUrl || !name) return Promise.resolve({ state: "off" });
+	var base64 = String(dataUrl).indexOf(",") >= 0
+		? String(dataUrl).split(",").slice(1).join(",")
+		: String(dataUrl);
+	if (!base64) return Promise.resolve({ state: "off" });
+	return createDoc("File", {
+		file_name: filename || ("document-" + Date.now() + ".pdf"),
+		is_private: 1,
+		decode: 1,
+		attached_to_doctype: doctype,
+		attached_to_name: name,
+		attached_to_field: fieldname || undefined,
+		content: base64
+	}, []).then(function (fileName) {
+		return fetchDoc("File", fileName).then(function (fdoc) {
+			var url = fdoc && fdoc.file_url ? fdoc.file_url : null;
+			if (fieldname && url) {
+				var patch = {};
+				patch[fieldname] = url;
+				return updateDoc(doctype, name, patch).then(function () {
+					return { state: "created", name: fileName, url: url };
+				});
+			}
+			return { state: "created", name: fileName, url: url };
+		}).catch(function () {
+			/* the File was created; only reading it back (or the field patch)
+			   failed — report success on the upload itself */
+			return { state: "created", name: fileName, url: null };
+		});
 	}).catch(function (e) {
 		return { state: "error",
 			errors: e.errors || [{ field: "", message: e.message || String(e) }] };
@@ -884,11 +976,23 @@ return {
 	configure: configure, ready: ready, login: login,
 	testConnection: testConnection, refreshVocabulary: refreshVocabulary,
 	syncCard: syncCard, ORG_DOCTYPES: Object.keys(ORG),
+	/* Low-level ERPNext plumbing, exposed so other shared modules (accdoc.js,
+	   for the purchase-invoice / customs / shipping-invoice workflow) can
+	   reuse auth, doctype-metadata checks and error handling instead of
+	   re-implementing them. */
+	shared: {
+		getList: getList, createDoc: createDoc, updateDoc: updateDoc,
+		fetchDoc: fetchDoc, apiUrl: apiUrl, methodUrl: methodUrl, request: request,
+		authHeaders: authHeaders, describe: describe, clean: clean,
+		ensureLink: ensureLink, attachFile: attachFile, toErrors: toErrors,
+		login: login, ready: ready
+	},
 	_internals: { readError: readError, tracebackTail: tracebackTail,
 		splitException: splitException, fieldFromMessage: fieldFromMessage,
 		culpritField: culpritField, orgDoc: orgDoc, contactDoc: contactDoc,
 		addressDoc: addressDoc, toErrors: toErrors, clean: clean,
 		describe: describe, ensureLink: ensureLink, attachImage: attachImage,
+		attachFile: attachFile, updateDoc: updateDoc,
 		fetchDoc: fetchDoc, CREATABLE: CREATABLE, FALLBACK_LINKS: FALLBACK_LINKS,
 		CONTACT_STATUS: CONTACT_STATUS, EXPLAIN: EXPLAIN }
 };

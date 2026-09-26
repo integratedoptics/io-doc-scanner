@@ -433,6 +433,10 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
           <option>Customer</option><option>Supplier</option><option>Lead</option><option>Prospect</option>
         </select>
       </div>
+      <div class="f"><label>Default Supplier Type</label>
+        <input id="s-erp-supplier-type" autocapitalize="off" spellcheck="false" placeholder="e.g. Foreign">
+      </div>
+      <p class="hint" style="margin-bottom:6px">Must exactly match an existing Supplier Type in ERPNext (Buying &rarr; Supplier Type) &mdash; required whenever a Supplier record is created from a card or a scanned document, otherwise ERPNext rejects it.</p>
       <p class="hint" style="margin-bottom:6px">New cards start with these switches:</p>
       <div class="split"><span>Organisation</span>
         <label class="sw"><input type="checkbox" id="s-sync-org"><i></i></label>
@@ -453,6 +457,14 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <div id="erp-test"></div>
       <button class="b sec" id="btn-erp-test" style="margin-top:10px">Test the connection</button>
       <p class="hint">Create the key and secret in ERPNext under <span class="k">User → API Access → Generate Keys</span>. Credentials are kept only on this phone. Use an <span class="k">https</span> address so nothing travels in the clear.</p>
+    </div>
+
+    <div class="card">
+      <h2 class="g">Document field extraction (Accounts Documents)</h2>
+      <div class="f"><label>Anthropic API key</label>
+        <input id="s-extract-key" type="password" autocapitalize="off" spellcheck="false">
+      </div>
+      <p class="hint">Used only to read purchase invoices, customs declarations, CD invoices and shipping invoices you scan and pull out their fields (document number/date, supplier, PO reference, totals) with Claude Sonnet 5. Separate from the AI cleanup key below, which may be a different provider. Leave blank to enter those fields by hand instead.</p>
     </div>
 
     <div class="card">
@@ -501,6 +513,8 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 <script src="norm.js"></script>
 <script src="net.js"></script>
 <script src="erp.js"></script>
+<script src="accdoc.js"></script>
+<script src="extract.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
