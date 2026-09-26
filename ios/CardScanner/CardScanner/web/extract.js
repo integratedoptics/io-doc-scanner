@@ -7,9 +7,7 @@
    is, its number and date, the supplier and its identifying codes, and (for
    the main document) a PO reference and due date.
 
-   Runs on Claude Opus 5.5 specifically (model id "claude-opus-5-5") — chosen
-   over the cheaper/faster Sonnet 5 for its stronger reasoning on messy or
-   inconsistent invoice layouts, at roughly double the per-token cost. Not
+   Runs on Claude Sonnet 5 specifically (model id "claude-sonnet-5"), not
    whichever provider/model Settings has configured for the existing
    business-card "AI cleanup" feature — that stays independent (and may be a
    different provider entirely), so this module takes its own Anthropic key
@@ -18,7 +16,7 @@
 window.CS_EXTRACT = (function () {
 "use strict";
 
-var MODEL = "claude-opus-5-5";
+var MODEL = "claude-sonnet-5";
 var API_URL = "https://api.anthropic.com/v1/messages";
 var ANTHROPIC_VERSION = "2023-06-01";
 
