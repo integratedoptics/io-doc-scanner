@@ -464,7 +464,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <div class="f"><label>Anthropic API key</label>
         <input id="s-extract-key" type="password" autocapitalize="off" spellcheck="false">
       </div>
-      <p class="hint">Used only to read purchase invoices, customs declarations, CD invoices and shipping invoices you scan and pull out their fields (document number/date, supplier, PO reference, totals) with Claude Sonnet 5. Separate from the AI cleanup key below, which may be a different provider. Leave blank to enter those fields by hand instead.</p>
+      <p class="hint">Used to read purchase invoices, customs declarations, CD invoices and shipping invoices you scan and pull out their fields (document number/date, supplier, PO reference, totals) with Claude Sonnet 5. On the Windows/macOS app, which has no on-device OCR, this same key is also used to read business-card photos directly — on Android/iOS, cards are still read on-device and this key isn’t used for them. Separate from the AI cleanup key below, which may be a different provider. Leave blank to enter fields by hand instead.</p>
     </div>
 
     <div class="card">
@@ -595,6 +595,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 <script src="erp.js"></script>
 <script src="accdoc.js"></script>
 <script src="extract.js"></script>
+<script src="cardvision.js"></script>
 <script src="pdf.min.js"></script>
 <script src="pdfview.js"></script>
 <script src="docscan.js"></script>

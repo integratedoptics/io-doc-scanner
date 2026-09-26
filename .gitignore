@@ -12,3 +12,7 @@ ios/CardScanner/**/xcuserdata/
 
 # macOS
 .DS_Store
+
+# Electron desktop shell
+electron/node_modules/
+electron/dist/

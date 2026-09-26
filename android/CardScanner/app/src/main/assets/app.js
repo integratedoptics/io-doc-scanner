@@ -1419,7 +1419,11 @@ paintCount();
 paintList();
 window.CS = { parseCard: parseCard, doExport: doExport, cards: function () { return cards; },
 	addCard: function (c) { cards.unshift(c); saveCards(); }, settings: function () { return S; },
-	normLinkedIn: normLinkedIn, showDraft: function (f) { newDraft(f, "", ""); },
+	normLinkedIn: normLinkedIn,
+	/* image/thumb let a caller that already has a picture (e.g. the desktop
+	   shell's Claude-vision card reading, which has no OCR step to go
+	   through onScan/parseCard) open the review form with it attached. */
+	showDraft: function (f, image, thumb) { newDraft(f, image || "", thumb || ""); },
 	normCountry: NORM.normCountry, normRegion: NORM.normRegion, normPhone: NORM.normPhone,
 	normalizeCard: NORM.normalizeCard, applyNormalisation: applyNormalisation,
 	syncPayload: syncPayload, erp: ERP, geo: GEO,

@@ -1,6 +1,6 @@
 # IO Doc Scanner (CardScanner)
 
-Offline business card scanner for Android and iOS that exports ERPNext-ready Excel files (Contacts, Addresses, and a plain backup sheet). No server, no account required — OCR and parsing run entirely on-device; an optional AI cleanup step only sends text off-device if you supply your own OpenAI-compatible or Anthropic API key in Settings.
+Offline business card scanner for Android, iOS and now Windows/macOS that exports ERPNext-ready Excel files (Contacts, Addresses, and a plain backup sheet). No server, no account required on the phone apps — OCR and parsing run entirely on-device there; an optional AI cleanup step only sends text off-device if you supply your own OpenAI-compatible or Anthropic API key in Settings. (The desktop app has no on-device OCR of its own — see `electron/README.md` for how it reads a card there instead.)
 
 Also scans accounts documents — purchase/proforma/sales invoices, customs declarations, customs-declaration invoices, and shipping invoices — reads a scanned PDF's text, asks Claude to pull out the key fields (with an editable review step first), flags a likely-duplicate Supplier before creating a new one, auto-suggests the right parent purchase record for the three later document sections, and files the record plus its PDF against ERPNext's "Accounts Document" doctype. See `docs/io-doc-scanner-expansion.md`-style notes in the project write-up for the full design.
 
@@ -9,10 +9,11 @@ Also scans accounts documents — purchase/proforma/sales invoices, customs decl
 - `android/CardScanner/` — Android app (Gradle project, WebView shell + Google ML Kit OCR). See `android/CardScanner/README.md` for how it works and `INSTALL.md` for build/signing steps.
 - `ios/CardScanner/` — iOS app (Xcode project, WKWebView shell + VisionKit/Vision OCR bridge). See `ios/CardScanner/BUILD-IOS.md`.
 - `docs/` — install guides (PDF) and UI reference screenshots.
+- `electron/` — Windows/macOS desktop app (Electron, wrapping the same shared web UI, no native OCR). See `electron/README.md`.
 
 ## Shared web UI
 
-Both native shells embed the same HTML/CSS/JS parsing and export layer (field parsing, ERPNext export, optional AI cleanup). The Android copy under `android/CardScanner/app/src/main/assets/` is the source of truth; `ios/CardScanner/sync-web-assets.sh` copies it into the iOS bundle at `ios/CardScanner/CardScanner/web/`. Run that script after changing the shared web UI so both platforms stay in sync.
+All three shells embed the same HTML/CSS/JS parsing, ERPNext sync and export layer. The Android copy under `android/CardScanner/app/src/main/assets/` is the source of truth; `ios/CardScanner/sync-web-assets.sh` and `electron/sync-web-assets.sh` each copy it into their own shell (`ios/CardScanner/CardScanner/web/` and `electron/app/web/`). Run both scripts after changing the shared web UI so all three platforms stay in sync — edit the Android copy, then re-run both.
 
 ## Notes
 
