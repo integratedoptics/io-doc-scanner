@@ -12,6 +12,34 @@ var A = window.Android || (window.Android = {
 	toast: function (m) { console.log("[toast]", m); },
 	takePhoto: function () { window.onScan({ ok: false, error: "No camera in this browser." }); },
 	pickPhoto: function () { window.onScan({ ok: false, error: "No camera in this browser." }); },
+	/* No native document picker in a plain browser (or in Electron, which has
+	   no bridge object at all) — a hidden file input does the same job and
+	   needs no native/Electron code of its own. */
+	pickDocument: function () {
+		var inp = document.getElementById("doc-file-fallback");
+		if (!inp) {
+			inp = document.createElement("input");
+			inp.type = "file";
+			inp.accept = "application/pdf";
+			inp.style.display = "none";
+			inp.id = "doc-file-fallback";
+			document.body.appendChild(inp);
+			inp.addEventListener("change", function () {
+				var file = inp.files && inp.files[0];
+				inp.value = "";
+				if (!file) { window.onDocPicked({ ok: false, error: "No file chosen." }); return; }
+				var r = new FileReader();
+				r.onload = function () {
+					window.onDocPicked({ ok: true, name: file.name, dataUrl: r.result });
+				};
+				r.onerror = function () {
+					window.onDocPicked({ ok: false, error: "Could not read that file." });
+				};
+				r.readAsDataURL(file);
+			});
+		}
+		inp.click();
+	},
 	reOcr: function () { window.onScan({ ok: false, error: "Not available in this browser." }); },
 	readData: function (n) { return localStorage.getItem("cs:" + n) || ""; },
 	writeData: function (n, c) { localStorage.setItem("cs:" + n, c); return true; },
@@ -235,9 +263,9 @@ function toast(msg, kind) {
 	clearTimeout(toast._t);
 	toast._t = setTimeout(function () { t.className = ""; }, kind === "err" ? 5200 : 2600);
 }
-var TITLES = { scan: "Scan card", cards: "Saved cards", export: "Export", set: "Settings" };
+var TITLES = { scan: "Scan card", cards: "Saved cards", docs: "Documents", export: "Export", set: "Settings" };
 function show(v) {
-	["scan", "cards", "export", "set"].forEach(function (n) {
+	["scan", "cards", "docs", "export", "set"].forEach(function (n) {
 		$("v-" + n).classList.toggle("on", n === v);
 	});
 	Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (b) {
@@ -245,6 +273,7 @@ function show(v) {
 	});
 	$("ttl").textContent = TITLES[v];
 	if (v === "cards") paintList();
+	if (v === "docs" && window.CS_DOCSCAN) window.CS_DOCSCAN.onShow();
 	document.querySelector("main").scrollTop = 0;
 }
 function paintCount() {
@@ -1383,6 +1412,7 @@ function wire() {
 loadState();
 ERP.configure(S);
 wire();
+if (window.CS_DOCSCAN) window.CS_DOCSCAN.init();
 paintCountryList();
 paintSettings();
 paintCount();

@@ -59,7 +59,7 @@ main{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:14px 14px 24px;-web
 
 /* ------------------------------------------------------------------ nav */
 nav{
-  flex:0 0 auto; display:grid; grid-template-columns:repeat(4,1fr);
+  flex:0 0 auto; display:grid; grid-template-columns:repeat(5,1fr);
   background:var(--white); border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom);
 }
@@ -492,11 +492,91 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
     </div>
   </section>
 
+  <!-- ============================================================ DOCS -->
+  <section class="view" id="v-docs">
+    <div class="card">
+      <h2>Scan a document</h2>
+      <div class="f"><label>Document type</label>
+        <select id="d-type">
+          <option value="purchase_invoice">Purchase Invoice</option>
+          <option value="proforma_invoice">Proforma Invoice</option>
+          <option value="sales_invoice">Sales Invoice</option>
+          <option value="customs_declaration">Customs Declaration</option>
+          <option value="cd_invoice">Customs Declaration Invoice</option>
+          <option value="shipping_invoice">Shipping Invoice</option>
+        </select>
+      </div>
+      <button class="b" id="btn-doc-pick">Scan or choose a PDF</button>
+      <p class="hint" id="d-file-name"></p>
+      <p class="hint">The PDF is read on the device. If a document-extraction key is set in Settings, its text is sent to Claude to pre-fill the fields below — otherwise fill them in by hand.</p>
+    </div>
+
+    <div class="card" id="box-doc-form" style="display:none">
+      <h2>Recognised fields</h2>
+      <div id="d-warn"></div>
+
+      <div class="row">
+        <div><label>Document no. <span class="mand">*</span></label><input id="d-document_no"></div>
+        <div><label>Document date <span class="mand">*</span></label><input id="d-document_date" placeholder="YYYY-MM-DD"></div>
+      </div>
+      <div class="row" id="d-row-main-extra">
+        <div><label>Payment due date</label><input id="d-payment_due_date" placeholder="YYYY-MM-DD"></div>
+        <div><label>Naming series</label><input id="d-naming_series"></div>
+      </div>
+      <div class="f" id="d-row-po">
+        <label>Purchase order reference</label><input id="d-purchase_order_reference">
+      </div>
+      <div class="f" id="d-row-sales" style="display:none">
+        <label>Sales invoice reference</label><input id="d-sales_invoice_reference">
+      </div>
+
+      <h2 style="margin-top:16px">Supplier</h2>
+      <div class="f"><label>Supplier name <span class="mand">*</span></label><input id="d-supplier_name"></div>
+      <div class="row">
+        <div><label>Registration number</label><input id="d-supplier_reg_number"></div>
+        <div><label>Tax / VAT ID</label><input id="d-supplier_tax_id"></div>
+      </div>
+      <div id="d-dupe-box"></div>
+
+      <div class="row">
+        <div><label>Currency (for your reference)</label><input id="d-currency"></div>
+        <div><label>Total amount (for your reference)</label><input id="d-total_amount" inputmode="decimal"></div>
+      </div>
+      <p class="hint">Currency and total are shown so you can sanity-check the scan against the document — they are not written to ERPNext by this screen.</p>
+
+      <div id="d-row-parent" style="display:none">
+        <h2 style="margin-top:16px">Parent purchase document</h2>
+        <div class="f"><label>Likely match</label>
+          <select id="d-parent"></select>
+          <p class="hint" id="d-parent-hint"></p>
+        </div>
+        <div class="f"><label>Or enter the exact Accounts Document ID</label>
+          <input id="d-parent-manual" placeholder="e.g. ACC-DOC-2026-00042">
+        </div>
+      </div>
+
+      <p class="hint" id="d-notes"></p>
+
+      <div id="d-stat"></div>
+      <button class="b ok" id="btn-doc-approve">Approve &amp; send to ERPNext</button>
+      <button class="b sec" id="btn-doc-extract">Re-run extraction</button>
+      <button class="b sec" id="btn-doc-cancel">Discard</button>
+    </div>
+
+    <details>
+      <summary>Find &amp; merge duplicate suppliers</summary>
+      <p class="hint" style="margin-top:9px">Compares every Supplier in ERPNext by name and by registration/tax ID and flags close matches. Merging is permanent — it renames one record into the other and moves its linked documents, so check both names first.</p>
+      <button class="b sec" id="btn-dupe-scan">Scan supplier list</button>
+      <div id="d-dupe-scan"></div>
+    </details>
+  </section>
+
 </main>
 
 <nav>
   <button data-v="scan" class="on"><svg viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M7 12h10"/></svg>Scan</button>
   <button data-v="cards"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 10h5M6 14h8"/></svg>Cards</button>
+  <button data-v="docs"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg>Documents</button>
   <button data-v="export"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>Export</button>
   <button data-v="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.5-2.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6 2 2 0 1 1 14 4.6 1.7 1.7 0 0 0 16.9 5.8l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4Z"/></svg>Settings</button>
 </nav>
@@ -515,6 +595,9 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 <script src="erp.js"></script>
 <script src="accdoc.js"></script>
 <script src="extract.js"></script>
+<script src="pdf.min.js"></script>
+<script src="pdfview.js"></script>
+<script src="docscan.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

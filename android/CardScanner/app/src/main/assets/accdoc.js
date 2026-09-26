@@ -116,27 +116,38 @@ function diceCoefficient(a, b) {
    non-empty code is decisive (typos in a name are common; a shared internal
    code is not a coincidence), so it floors the score at 0.97 even if the
    names otherwise look unrelated — still just a high-ranked suggestion for
-   a human, never an auto-merge trigger by itself. */
+   a human, never an auto-merge trigger by itself.
+
+   `code` is compared against the real Supplier identity fields — Supplier
+   has no `supplier_code` field at all (confirmed against the doctype's own
+   field export): the fields that actually identify a company there are
+   `reg_number` (registration number) and `tax_id` (VAT/Tax ID). A match on
+   either counts. */
 function nameScore(name, code, supplier) {
 	var n1 = normalizeName(name), n2 = normalizeName(supplier.supplier_name);
 	var score = diceCoefficient(n1, n2);
 	var codeMatch = false;
-	if (code && supplier.supplier_code && String(code).trim().toLowerCase() ===
-			String(supplier.supplier_code).trim().toLowerCase()) {
-		codeMatch = true;
-		score = Math.max(score, 0.97);
+	var c = code ? String(code).trim().toLowerCase() : "";
+	if (c) {
+		var reg = supplier.reg_number ? String(supplier.reg_number).trim().toLowerCase() : "";
+		var tax = supplier.tax_id ? String(supplier.tax_id).trim().toLowerCase() : "";
+		if ((reg && c === reg) || (tax && c === tax)) {
+			codeMatch = true;
+			score = Math.max(score, 0.97);
+		}
 	}
 	return { score: score, codeMatch: codeMatch, supplier: supplier };
 }
 
 /* Looks for existing Suppliers that might be the same company as `name`
-   (optionally with a `code` to match on). Returns candidates scoring above
-   `threshold`, best first — never more than a handful, since this is for a
-   human to glance at, not to page through. */
+   (optionally with a `code` — a registration number or tax ID read off the
+   document — to match on). Returns candidates scoring above `threshold`,
+   best first — never more than a handful, since this is for a human to
+   glance at, not to page through. */
 function findSupplierMatches(name, code, threshold) {
 	threshold = threshold == null ? 0.55 : threshold;
 	return erp().getList("Supplier", null,
-			["name", "supplier_name", "supplier_code"], 0)
+			["name", "supplier_name", "reg_number", "tax_id"], 0)
 		.then(function (rows) {
 			return rows.map(function (s) { return nameScore(name, code, s); })
 				.filter(function (r) { return r.score >= threshold; })

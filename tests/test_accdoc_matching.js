@@ -50,19 +50,25 @@ var nameScore = ACC._internals.nameScore;
 
 var sameCodeDifferentSpelling = nameScore(
 	"Integrated Optics", "LT123456789",
-	{ supplier_name: "UAB Integruota Optika", supplier_code: "LT123456789" });
-check("nameScore: matching code floors score >= 0.97 despite differing name",
+	{ supplier_name: "UAB Integruota Optika", reg_number: "", tax_id: "LT123456789" });
+check("nameScore: matching tax_id floors score >= 0.97 despite differing name",
 	sameCodeDifferentSpelling.score >= 0.97 && sameCodeDifferentSpelling.codeMatch);
+
+var sameRegNumber = nameScore(
+	"Integrated Optics", "300123456",
+	{ supplier_name: "Something Else Entirely", reg_number: "300123456", tax_id: "" });
+check("nameScore: matching reg_number also floors score >= 0.97",
+	sameRegNumber.score >= 0.97 && sameRegNumber.codeMatch);
 
 var closeNameNoCode = nameScore(
 	"Integrated Optics UAB", null,
-	{ supplier_name: "Integrated Optics", supplier_code: "" });
+	{ supplier_name: "Integrated Optics", reg_number: "", tax_id: "" });
 check("nameScore: close name alone scores high without a code",
 	closeNameNoCode.score > 0.8 && !closeNameNoCode.codeMatch);
 
 var unrelated = nameScore(
 	"Integrated Optics", "LT123456789",
-	{ supplier_name: "Northern Freight Ltd", supplier_code: "DE999999999" });
+	{ supplier_name: "Northern Freight Ltd", reg_number: "DE999999999", tax_id: "DE888888888" });
 check("nameScore: different name AND different code scores low",
 	unrelated.score < 0.3 && !unrelated.codeMatch);
 
