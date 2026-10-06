@@ -36,8 +36,12 @@ var SECTION_FOR = {
 /* Best guess only — the review form leaves this editable so the employee
    can fix it against whatever naming series ERPNext actually has set up. */
 var NAMING_GUESS = { purchase_invoice: "PURCHASE-", proforma_invoice: "PURCHASE-", sales_invoice: "SALES-" };
+var SERIES_GUESSES = ["PURCHASE-", "SALES-", "PROFORMA-"];
 
-var state = { dataUrl: null, fileName: "", supplierLink: "", kind: "pdf", run: 0 };
+var state = { dataUrl: null, fileName: "", supplierLink: "", customerLink: "", kind: "pdf", run: 0 };
+/* similar customers matched at or above this score (or sharing a registration / tax ID)
+   are picked automatically; anything lower is offered for the employee to choose */
+var AUTO_PICK = 0.80;
 var PICK_LABEL = "Choose a PDF or picture", PHOTO_LABEL = "Take a photo";
 
 function kindOf(dataUrl) { return /^data:image\//i.test(dataUrl || "") ? "image" : "pdf"; }
@@ -45,14 +49,32 @@ function kindOf(dataUrl) { return /^data:image\//i.test(dataUrl || "") ? "image"
 function settings() { return (window.CS && window.CS.settings()) || {}; }
 function section() { return SECTION_FOR[$("d-type").value] || "main"; }
 
+/* A document WE issue (a sales invoice, or a proforma the employee says is ours) names a
+   customer, not a supplier. */
+function salesMode() {
+	var t = $("d-type").value;
+	return t === "sales_invoice" || (t === "proforma_invoice" && $("d-direction").value === "out");
+}
+function seriesGuess() {
+	var t = $("d-type").value;
+	if (t === "sales_invoice") return "SALES-";
+	if (t === "proforma_invoice") return salesMode() ? "PROFORMA-" : "PURCHASE-";
+	return NAMING_GUESS[t] || "PURCHASE-";
+}
+
 function updateTypeUi() {
 	var t = $("d-type").value, sec = SECTION_FOR[t];
 	$("d-row-main-extra").style.display = sec === "main" ? "" : "none";
-	$("d-row-po").style.display = (sec === "main" && t !== "sales_invoice") ? "" : "none";
-	$("d-row-sales").style.display = (t === "sales_invoice") ? "" : "none";
+	var sales = salesMode();
+	$("d-row-direction").style.display = t === "proforma_invoice" ? "" : "none";
+	$("d-row-po").style.display = (sec === "main" && !sales) ? "" : "none";
+	$("d-row-sales").style.display = (sec === "main" && sales) ? "" : "none";
+	$("d-box-supplier").style.display = sales ? "none" : "";
+	$("d-box-customer").style.display = sales ? "" : "none";
 	$("d-row-parent").style.display = sec === "main" ? "none" : "";
-	if (sec === "main" && !$("d-naming_series").value) {
-		$("d-naming_series").value = NAMING_GUESS[t] || "PURCHASE-";
+	var cur = $("d-naming_series").value;
+	if (sec === "main" && (!cur || SERIES_GUESSES.indexOf(cur) >= 0)) {
+		$("d-naming_series").value = seriesGuess();
 	}
 	if (sec !== "main") loadParentCandidates();
 }
@@ -60,19 +82,23 @@ function updateTypeUi() {
 function resetForm() {
 	["document_no", "document_date", "payment_due_date", "naming_series",
 		"purchase_order_reference", "sales_invoice_reference", "supplier_name",
-		"supplier_reg_number", "supplier_tax_id", "currency", "total_amount"].forEach(function (k) {
+		"supplier_reg_number", "supplier_tax_id", "customer_name", "customer_reg_number", "customer_tax_id",
+		"currency", "total_amount"].forEach(function (k) {
 		var el = $("d-" + k);
 		if (el) el.value = "";
 	});
 	$("d-parent-manual").value = "";
+	$("d-direction").value = "in";
 	$("d-warn").innerHTML = "";
 	$("d-dupe-box").innerHTML = "";
+	$("d-cust-box").innerHTML = "";
+	$("d-issuer-note").textContent = "";
 	$("d-notes").textContent = "";
 	$("d-stat").innerHTML = "";
 	$("d-parent").innerHTML = "";
 	$("d-parent-hint").textContent = "";
 	$("d-file-name").textContent = "";
-	state.dataUrl = null; state.fileName = ""; state.supplierLink = ""; state.kind = "pdf"; state.run++;
+	state.dataUrl = null; state.fileName = ""; state.supplierLink = ""; state.customerLink = ""; state.kind = "pdf"; state.run++;
 	$("d-preview").style.display = "none"; $("d-preview").removeAttribute("src");
 	$("box-doc-form").style.display = "none";
 }
@@ -85,7 +111,12 @@ function code() {
 	return tax || reg;
 }
 
+function customerCode() {
+	return $("d-customer_tax_id").value.trim() || $("d-customer_reg_number").value.trim();
+}
+
 function readFields() {
+	var sales = salesMode();
 	return {
 		documentNo: $("d-document_no").value.trim(),
 		documentDate: $("d-document_date").value.trim(),
@@ -93,9 +124,11 @@ function readFields() {
 		namingSeries: $("d-naming_series").value.trim(),
 		purchaseOrderReference: $("d-purchase_order_reference").value.trim(),
 		salesInvoiceReference: $("d-sales_invoice_reference").value.trim(),
-		supplierName: $("d-supplier_name").value.trim(),
-		supplierCode: code(),
-		supplierLink: state.supplierLink
+		supplierName: sales ? "" : $("d-supplier_name").value.trim(),
+		supplierCode: sales ? "" : code(),
+		supplierLink: sales ? "" : state.supplierLink,
+		customerName: sales ? $("d-customer_name").value.trim() : "",
+		customerLink: sales ? state.customerLink : ""
 	};
 }
 
@@ -105,7 +138,7 @@ function checkSupplier() {
 	var name = $("d-supplier_name").value.trim();
 	state.supplierLink = "";
 	$("d-dupe-box").innerHTML = "";
-	if (!name || !window.CS_ACC) return;
+	if (!name || !window.CS_ACC || salesMode()) return;
 	var c = code();
 	window.CS_ACC.findExactSupplier(name).then(function (exact) {
 		if (exact) { state.supplierLink = exact; return; }
@@ -132,6 +165,57 @@ function checkSupplier() {
 			});
 		});
 	}).catch(function () { /* a failed duplicate-check shouldn't block manual entry */ });
+}
+
+/* ------------------------------------------------------- similar customer */
+
+function customerCodes() {
+	return [$("d-customer_tax_id").value.trim(), $("d-customer_reg_number").value.trim()].filter(Boolean);
+}
+
+function showCustomerLinked(name, how) {
+	state.customerLink = name;
+	var box = $("d-cust-box");
+	box.innerHTML = '<p class="hint" style="color:#1f8a4c">Customer in ERPNext: <b>' + esc(name) + "</b>" +
+		(how ? " — " + esc(how) : "") + ' <a href="#" id="d-cust-change">change</a></p>';
+	$("d-cust-change").onclick = function (ev) { ev.preventDefault(); checkCustomer(true); };
+}
+
+/* Reads the customer off the document and picks the most similar customer in ERPNext:
+   automatically when the registration / tax ID matches or the name is a near-certain
+   match, otherwise by showing the closest few for the employee to choose. */
+function checkCustomer(forceList) {
+	var name = $("d-customer_name").value.trim();
+	state.customerLink = "";
+	$("d-cust-box").innerHTML = "";
+	if (!name || !window.CS_ACC || !salesMode()) return;
+	var token = state.run;
+	window.CS_ACC.findCustomerMatches(name, customerCodes(), 0.45).then(function (matches) {
+		if (token !== state.run || !salesMode()) return;
+		if (!matches.length) {
+			$("d-cust-box").innerHTML = note("No similar customer found in ERPNext — the Customer field will be left empty " +
+				"unless a customer with exactly this name exists. Add the customer in ERPNext first if it is new.", "var(--violet)");
+			return;
+		}
+		var top = matches[0], second = matches[1];
+		var sure = top.codeMatch || (top.score >= AUTO_PICK && (!second || top.score - second.score >= 0.05));
+		if (sure && !forceList) {
+			showCustomerLinked(top.customer.name, top.codeMatch ? "same registration/tax ID"
+				: Math.round(top.score * 100) + "% name match");
+			return;
+		}
+		var html = '<p class="hint" style="color:var(--violet)">Most similar customers in ERPNext — pick the right one:</p>';
+		matches.forEach(function (m) {
+			html += '<div class="row" style="align-items:center;margin-bottom:6px">' +
+				'<span class="hint" style="margin:0">' + esc(m.customer.customer_name || m.customer.name) +
+				(m.codeMatch ? " (same registration/tax ID)" : " — " + Math.round(m.score * 100) + "% match") + "</span>" +
+				'<button class="b sec" style="margin:0" data-cust="' + esc(m.customer.name) + '">Use this</button></div>';
+		});
+		$("d-cust-box").innerHTML = html;
+		Array.prototype.forEach.call($("d-cust-box").querySelectorAll("[data-cust]"), function (btn) {
+			btn.onclick = function () { showCustomerLinked(btn.dataset.cust, "chosen by you"); };
+		});
+	}).catch(function () { /* a failed lookup shouldn't block manual entry */ });
 }
 
 /* ---------------------------------------------------------- parent document */
@@ -200,12 +284,16 @@ function handleDocPicked(r) {
 window.onDocPicked = handleDocPicked;
 
 var FIELD_KEYS = ["doc_type", "document_no", "document_date", "payment_due_date", "supplier_name",
-	"supplier_reg_number", "supplier_tax_id", "purchase_order_reference", "currency", "total_amount"];
+	"supplier_reg_number", "supplier_tax_id", "customer_name", "customer_reg_number", "customer_tax_id",
+	"purchase_order_reference", "currency", "total_amount"];
 
 function has(v) { return v !== undefined && v !== null && v !== ""; }
 
 /* AI answer first, built-in reader as the fallback for whatever the AI left empty —
-   and a guard for the one mistake the AI is prone to: naming the buyer (us) as supplier. */
+   plus guards for the AI's known mistakes: naming the buyer (us) as supplier, and mixing
+   up which side issued the document. Documents issued by Integrated Optics UAB or
+   IO Integrated Optics GmbH (intercompany included) are sales documents whose customer
+   is the other party; there is then no supplier. */
 function mergeFields(rules, ai) {
 	var out = {};
 	FIELD_KEYS.forEach(function (k) {
@@ -213,26 +301,68 @@ function mergeFields(rules, ai) {
 	});
 	var R = window.CS_RULES, notes = [];
 	if (ai && has(ai.notes)) notes.push(ai.notes);
-	var ownIssuer = out.doc_type === "sales_invoice";
-	if (!ownIssuer && has(out.supplier_name) && R.isOwnName(out.supplier_name)) {
-		if (rules && has(rules.supplier_name) && !R.isOwnName(rules.supplier_name)) {
-			out.supplier_name = rules.supplier_name;
-			out.supplier_reg_number = rules.supplier_reg_number;
-			out.supplier_tax_id = rules.supplier_tax_id;
-			notes.push("the AI named our own company as supplier — replaced by the seller found by the built-in reader");
-		} else {
-			out.supplier_name = null; out.supplier_reg_number = null; out.supplier_tax_id = null;
-			notes.push("the document names only our own company — enter the supplier by hand");
+	var rulesOurs = !!(rules && rules.issuer_is_ours);
+	var ours = ai && typeof ai.issuer_is_ours === "boolean" ? ai.issuer_is_ours : rulesOurs;
+	if (!ours && has(out.supplier_name) && R.isOwnName(out.supplier_name) && rulesOurs) ours = true;
+
+	if (ours) {
+		/* we are the issuer: the customer is the other party */
+		var issuerEntity = (rules && rules.issuer_entity) || R.ownEntity(out.supplier_name || "");
+		var cust = {
+			name: has(ai && ai.customer_name) ? ai.customer_name : null,
+			reg: ai && ai.customer_reg_number, tax: ai && ai.customer_tax_id
+		};
+		var sameAsIssuer = has(cust.name) && issuerEntity && R.ownEntity(cust.name) === issuerEntity;
+		if (!has(cust.name) || sameAsIssuer) {
+			if (rules && has(rules.customer_name)) {
+				out.customer_name = rules.customer_name;
+				out.customer_reg_number = rules.customer_reg_number;
+				out.customer_tax_id = rules.customer_tax_id;
+			} else if (!has(cust.name) && has(ai && ai.supplier_name) && !R.isOwnName(ai.supplier_name)) {
+				/* the AI put the other party in the supplier slot */
+				out.customer_name = ai.supplier_name;
+				out.customer_reg_number = ai.supplier_reg_number || null;
+				out.customer_tax_id = ai.supplier_tax_id || null;
+			} else if (sameAsIssuer) {
+				out.customer_name = null; out.customer_reg_number = null; out.customer_tax_id = null;
+				notes.push("the customer could not be told apart from the issuer — enter it by hand");
+			}
 		}
+		out.supplier_name = null; out.supplier_reg_number = null; out.supplier_tax_id = null;
+		if (!out.doc_type || out.doc_type === "purchase_invoice") out.doc_type = "sales_invoice";
+		/* codes printed for the issuer must not be mistaken for the customer's */
+		if (has(out.customer_reg_number) && R.isOwnCode(out.customer_reg_number) && !R.ownEntity(out.customer_name || "")) {
+			out.customer_reg_number = null;
+		}
+		if (has(out.customer_tax_id) && R.isOwnCode(out.customer_tax_id) && !R.ownEntity(out.customer_name || "")) {
+			out.customer_tax_id = null;
+		}
+		out.issuer_is_ours = true;
+	} else {
+		out.customer_name = null; out.customer_reg_number = null; out.customer_tax_id = null;
+		if (out.doc_type === "sales_invoice") out.doc_type = "purchase_invoice";
+		if (has(out.supplier_name) && R.isOwnName(out.supplier_name)) {
+			if (rules && has(rules.supplier_name) && !R.isOwnName(rules.supplier_name)) {
+				out.supplier_name = rules.supplier_name;
+				out.supplier_reg_number = rules.supplier_reg_number;
+				out.supplier_tax_id = rules.supplier_tax_id;
+				notes.push("the AI named our own company as supplier — replaced by the seller found by the built-in reader");
+			} else {
+				out.supplier_name = null; out.supplier_reg_number = null; out.supplier_tax_id = null;
+				notes.push("the document names only our own company — enter the supplier by hand");
+			}
+		}
+		if (has(out.supplier_reg_number) && R.isOwnCode(out.supplier_reg_number)) {
+			out.supplier_reg_number = rules && has(rules.supplier_reg_number) && !R.isOwnCode(rules.supplier_reg_number)
+				? rules.supplier_reg_number : null;
+		}
+		if (has(out.supplier_tax_id) && R.isOwnCode(out.supplier_tax_id)) {
+			out.supplier_tax_id = rules && has(rules.supplier_tax_id) && !R.isOwnCode(rules.supplier_tax_id)
+				? rules.supplier_tax_id : null;
+		}
+		out.issuer_is_ours = false;
 	}
-	if (has(out.supplier_reg_number) && R.isOwnCode(out.supplier_reg_number)) {
-		out.supplier_reg_number = rules && has(rules.supplier_reg_number) && !R.isOwnCode(rules.supplier_reg_number)
-			? rules.supplier_reg_number : null;
-	}
-	if (has(out.supplier_tax_id) && R.isOwnCode(out.supplier_tax_id)) {
-		out.supplier_tax_id = rules && has(rules.supplier_tax_id) && !R.isOwnCode(rules.supplier_tax_id)
-			? rules.supplier_tax_id : null;
-	}
+	out.issuer_entity = ours ? ((rules && rules.issuer_entity) || "") : "";
 	out.confidence = ai && typeof ai.confidence === "number" ? ai.confidence : (rules ? rules.confidence : 0);
 	out.language = (ai && ai.language) || (rules && rules.language) || "";
 	out.notes = notes.join("; ");
@@ -248,8 +378,10 @@ function fillFromExtraction(x, soft) {
 	if (x.doc_type && DOC_TYPE_LABELS[x.doc_type] && x.doc_type !== $("d-type").value &&
 		!(soft && main[x.doc_type] && !main[$("d-type").value])) {
 		$("d-type").value = x.doc_type;
-		updateTypeUi();
 	}
+	/* a proforma carries its direction in who issued it; the type itself says nothing */
+	$("d-direction").value = x.issuer_is_ours ? "out" : "in";
+	updateTypeUi();
 	$("d-document_no").value = x.document_no || "";
 	$("d-document_date").value = x.document_date || "";
 	$("d-payment_due_date").value = x.payment_due_date || "";
@@ -257,6 +389,9 @@ function fillFromExtraction(x, soft) {
 	$("d-supplier_name").value = x.supplier_name || "";
 	$("d-supplier_reg_number").value = x.supplier_reg_number || "";
 	$("d-supplier_tax_id").value = x.supplier_tax_id || "";
+	$("d-customer_name").value = x.customer_name || "";
+	$("d-customer_reg_number").value = x.customer_reg_number || "";
+	$("d-customer_tax_id").value = x.customer_tax_id || "";
 	$("d-currency").value = x.currency || "";
 	$("d-total_amount").value = (x.total_amount === undefined || x.total_amount === null) ? "" : x.total_amount;
 	var notes = [];
@@ -264,7 +399,13 @@ function fillFromExtraction(x, soft) {
 	if (typeof x.confidence === "number") notes.push("confidence: " + Math.round(x.confidence * 100) + "%");
 	if (x.notes) notes.push(x.notes);
 	$("d-notes").textContent = notes.join(" — ");
+	$("d-issuer-note").textContent = x.issuer_is_ours
+		? "Issued by " + (x.issuer_entity === "GmbH" ? "IO Integrated Optics GmbH" :
+			x.issuer_entity === "UAB" ? "Integrated Optics UAB" : "Integrated Optics") +
+			(/integrated optics/i.test(x.customer_name || "") ? " — an intercompany invoice." : ".")
+		: "";
 	checkSupplier();
+	checkCustomer();
 	if (section() !== "main") loadParentCandidates();
 }
 
@@ -335,8 +476,10 @@ function runExtraction() {
 function approve() {
 	var t = $("d-type").value, sec = SECTION_FOR[t];
 	var f = readFields();
-	if (!f.documentNo || !f.documentDate || !f.supplierName) {
-		$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Document no., date and supplier name are required.</p>';
+	var sales = salesMode();
+	if (!f.documentNo || !f.documentDate || !(sales ? f.customerName : f.supplierName)) {
+		$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Document no., date and ' +
+			(sales ? "customer" : "supplier") + " name are required.</p>";
 		return;
 	}
 	if (!state.dataUrl) {
@@ -445,7 +588,11 @@ function scanDuplicateSuppliers() {
 /* ------------------------------------------------------------------- wiring */
 
 function init() {
-	$("d-type").addEventListener("change", function () { updateTypeUi(); checkSupplier(); });
+	$("d-type").addEventListener("change", function () { updateTypeUi(); checkSupplier(); checkCustomer(); });
+	$("d-direction").addEventListener("change", function () { updateTypeUi(); checkSupplier(); checkCustomer(); });
+	$("d-customer_name").addEventListener("blur", function () { checkCustomer(); });
+	$("d-customer_reg_number").addEventListener("blur", function () { checkCustomer(); });
+	$("d-customer_tax_id").addEventListener("blur", function () { checkCustomer(); });
 	$("d-supplier_name").addEventListener("blur", checkSupplier);
 	$("d-supplier_reg_number").addEventListener("blur", checkSupplier);
 	$("d-supplier_tax_id").addEventListener("blur", checkSupplier);

@@ -29,6 +29,8 @@ npm run dist:mac        # build a signed... well, an UNSIGNED .dmg/.zip for macO
 npm run dist:win        # build an unsigned NSIS installer + portable .exe for Windows
 ```
 
+Step-by-step instructions for installing on Windows PCs: [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md).
+
 **Builds are unsigned.** macOS Gatekeeper will show an "unidentified developer" warning, and Windows SmartScreen will warn on first run — expected for now. Distributing this more broadly will need an Apple Developer ID (for `notarize`/code signing) and a Windows code-signing certificate; neither is set up yet.
 
 ## Where things are stored

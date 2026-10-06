@@ -532,13 +532,34 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
         <label>Sales invoice reference</label><input id="d-sales_invoice_reference">
       </div>
 
-      <h2 style="margin-top:16px">Supplier</h2>
-      <div class="f"><label>Supplier name <span class="mand">*</span></label><input id="d-supplier_name"></div>
-      <div class="row">
-        <div><label>Registration number</label><input id="d-supplier_reg_number"></div>
-        <div><label>Tax / VAT ID</label><input id="d-supplier_tax_id"></div>
+      <div class="f" id="d-row-direction" style="display:none">
+        <label>Who issued this proforma?</label>
+        <select id="d-direction">
+          <option value="in">A supplier sent it to us</option>
+          <option value="out">We issued it (Integrated Optics UAB / IO Integrated Optics GmbH)</option>
+        </select>
       </div>
-      <div id="d-dupe-box"></div>
+
+      <div id="d-box-supplier">
+        <h2 style="margin-top:16px">Supplier</h2>
+        <div class="f"><label>Supplier name <span class="mand">*</span></label><input id="d-supplier_name"></div>
+        <div class="row">
+          <div><label>Registration number</label><input id="d-supplier_reg_number"></div>
+          <div><label>Tax / VAT ID</label><input id="d-supplier_tax_id"></div>
+        </div>
+        <div id="d-dupe-box"></div>
+      </div>
+
+      <div id="d-box-customer" style="display:none">
+        <h2 style="margin-top:16px">Customer</h2>
+        <p class="hint" id="d-issuer-note"></p>
+        <div class="f"><label>Customer name <span class="mand">*</span></label><input id="d-customer_name"></div>
+        <div class="row">
+          <div><label>Registration number</label><input id="d-customer_reg_number"></div>
+          <div><label>Tax / VAT ID</label><input id="d-customer_tax_id"></div>
+        </div>
+        <div id="d-cust-box"></div>
+      </div>
 
       <div class="row">
         <div><label>Currency (for your reference)</label><input id="d-currency"></div>

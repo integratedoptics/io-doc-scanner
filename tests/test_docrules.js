@@ -104,5 +104,38 @@ var own = R.parse("PVM sąskaita faktūra Nr. 1 Data: 2026-04-22 Pirkėjas: Inte
 eq("buyer-only text yields no supplier", own.supplier_name, null);
 eq("own codes are never taken", own.supplier_reg_number, null);
 
+/* ---- 8. sales documents: we are the issuer, the other party is the customer */
+var sale = R.parse("PVM sąskaita faktūra Serija IO Nr. 2026-117 Data: 2026 m. gegužės 2 d. Apmokėti iki: 2026-06-01 " +
+	"Pardavėjas: Integrated Optics UAB Įmonės kodas: 302833442 PVM mokėtojo kodas: LT100007179012 " +
+	"Pirkėjas: Photon Systems GmbH Įmonės kodas: HRB 556677 PVM kodas: DE811234567 Užsakymo Nr. PO-4411 Suma, EUR: 1 210,00");
+eq("sale: type", sale.doc_type, "sales_invoice");
+eq("sale: issued by us (UAB)", [sale.issuer_is_ours, sale.issuer_entity], [true, "UAB"]);
+eq("sale: no supplier", [sale.supplier_name, sale.supplier_reg_number, sale.supplier_tax_id], [null, null, null]);
+eq("sale: customer", sale.customer_name, "Photon Systems GmbH");
+eq("sale: customer VAT (not ours)", sale.customer_tax_id, "DE811234567");
+eq("sale: number, date, total", [sale.document_no, sale.document_date, sale.total_amount], ["IO2026-117", "2026-05-02", 1210]);
+
+var inter = R.parse("Sąskaita faktūra Nr. IO-55 Data: 2026-06-10 Pardavėjas: Integrated Optics UAB Įmonės kodas: 302833442 " +
+	"Pirkėjas: IO Integrated Optics GmbH USt-IdNr.: DE123456789 Suma, EUR: 500,00");
+eq("intercompany: UAB sells to GmbH", [inter.doc_type, inter.issuer_entity, inter.customer_name, inter.customer_tax_id],
+	["sales_invoice", "UAB", "IO Integrated Optics GmbH", "DE123456789"]);
+eq("intercompany is flagged in the notes", /between our own companies/.test(inter.notes), true);
+
+var gsale = R.parse("Rechnung Rechnungsnummer: 2026-001 Rechnungsdatum: 03.06.2026 IO Integrated Optics GmbH Hauptstraße 1 " +
+	"USt-IdNr.: DE999999999 Rechnungsempfänger: Acme Photonics Ltd VAT No: GB123456789 Gesamtbetrag: 1.190,00 EUR");
+eq("GmbH sells to a third party", [gsale.doc_type, gsale.issuer_entity, gsale.customer_name, gsale.customer_tax_id, gsale.total_amount],
+	["sales_invoice", "GmbH", "Acme Photonics Ltd", "GB123456789", 1190]);
+eq("GmbH sale: its own USt-IdNr. is not the customer's", gsale.customer_tax_id !== "DE999999999", true);
+
+var proforma = R.parse("Proforma invoice No. PF-9 Date: 2026-07-01 Seller: IO Integrated Optics GmbH Buyer: Foo Oy VAT: FI12345678 Total: EUR 99.00");
+eq("proforma issued by us keeps its kind and finds the customer", [proforma.doc_type, proforma.issuer_is_ours, proforma.customer_name],
+	["proforma_invoice", true, "Foo Oy"]);
+
+/* unlabelled letterhead: the Sales Invoice choice breaks the tie, otherwise we are the buyer */
+var bare = "Integrated Optics UAB Company code: 302833442 Foo Optics UAB Company code: 111222333 Invoice No. A-1 Date: 2026-01-05 Total: 10.00 EUR";
+eq("unlabelled, no hint: we are the buyer, the other company is the supplier", [R.parse(bare).issuer_is_ours, R.parse(bare).supplier_name], [false, "Foo Optics UAB"]);
+eq("unlabelled + Sales Invoice chosen: we issued it", [R.parse(bare, "sales_invoice").issuer_is_ours, R.parse(bare, "sales_invoice").customer_name], [true, "Foo Optics UAB"]);
+eq("unlabelled is flagged", /no seller\/buyer labels/.test(R.parse(bare).notes), true);
+
 console.log(fails ? fails + " FAILED" : "all passed");
 process.exit(fails ? 1 : 0);

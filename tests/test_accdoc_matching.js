@@ -54,6 +54,27 @@ check("diceCoefficient near-identical strings scores high",
 check("diceCoefficient unrelated strings scores low",
 	ACC.diceCoefficient("integrated optics", "north sea shipping") < 0.3);
 
+/* --- customers: the other party on a sales document --- */
+var cs = ACC._internals.customerScore;
+check("customer: same company, different legal-form spelling scores high",
+	cs("IO Integrated Optics GmbH", [], { name: "CUST-0007", customer_name: "IO Integrated Optics" }).score > 0.95);
+check("customer: accents and word order ignored",
+	cs("Šiaulių Gelžbetonis, UAB", [], { name: "C1", customer_name: "SIAULIU GELZBETONIS" }).score > 0.95);
+check("customer: a shared tax ID wins over a rough name",
+	cs("Photon Systems", ["DE811234567"], { name: "C2", customer_name: "Totally Different Name AG", tax_id: "DE811234567" }).codeMatch === true);
+check("customer: any one of several printed codes may match",
+	cs("X", ["HRB 556677", "DE811234567"], { name: "C3", customer_name: "Y", tax_id: "DE811234567" }).codeMatch === true);
+check("customer: unrelated company scores low",
+	cs("Photon Systems GmbH", [], { name: "C4", customer_name: "Baltic Timber" }).score < 0.3);
+check("customer: the original record is returned for linking",
+	cs("A", [], { name: "CUST-1", customer_name: "A" }).customer.name === "CUST-1");
+check("sectionPatch puts a picked customer on the document",
+	ACC.sectionPatch("main", { documentNo: "1", customerLink: "CUST-1", customerName: "A" }).customer === "CUST-1");
+check("sectionPatch falls back to the printed customer name",
+	ACC.sectionPatch("main", { documentNo: "1", customerName: "Photon Systems GmbH" }).customer === "Photon Systems GmbH");
+check("sectionPatch leaves customer alone for a purchase",
+	ACC.sectionPatch("main", { documentNo: "1", supplierName: "S" }).customer === undefined);
+
 /* --- nameScore: a shared code floors the score even with a rough name --- */
 var nameScore = ACC._internals.nameScore;
 

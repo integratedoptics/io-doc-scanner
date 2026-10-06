@@ -179,6 +179,38 @@ function findExactSupplier(name) {
 		.then(function (rows) { return rows.length ? rows[0].name : null; });
 }
 
+/* ---------------------------------------------------------------- customers */
+
+/* The customer on a sales document, matched to the Customer list the same way a
+   supplier is: by name (accents, legal forms and word order ignored) and by any
+   registration number / tax ID printed for it. `codes` is a list, since a document
+   may print both. Customer's identity field in a stock ERPNext is `tax_id`; this
+   instance may also carry a `reg_number` like Supplier does, so it is asked for
+   and silently dropped if ERPNext says there is no such field. */
+function customerScore(name, codes, customer) {
+	var rec = { supplier_name: customer.customer_name || customer.name,
+		reg_number: customer.reg_number, tax_id: customer.tax_id };
+	var best = null;
+	(codes && codes.length ? codes : [""]).forEach(function (c) {
+		var r = nameScore(name, c, rec);
+		if (!best || r.score > best.score) best = r;
+	});
+	return { score: best.score, codeMatch: best.codeMatch, customer: customer };
+}
+
+function findCustomerMatches(name, codes, threshold) {
+	threshold = threshold == null ? 0.5 : threshold;
+	var e = erp();
+	return e.getList("Customer", null, ["name", "customer_name", "tax_id", "reg_number"], 0)
+		.catch(function () { return e.getList("Customer", null, ["name", "customer_name", "tax_id"], 0); })
+		.then(function (rows) {
+			return rows.map(function (c) { return customerScore(name, codes, c); })
+				.filter(function (r) { return r.score >= threshold; })
+				.sort(function (a, b) { return b.score - a.score; })
+				.slice(0, 5);
+		});
+}
+
 /* Calls ERPNext's own document-merge endpoint (frappe.client.rename_doc with
    merge=1): renames dupName into intoName, merging their linked records.
    Only ever called after the employee confirms which two records they mean
@@ -282,7 +314,9 @@ function sectionPatch(section, fields) {
 		if (fields.salesInvoiceReference) {
 			patch.sales_invoice_reference = fields.salesInvoiceReference;
 		}
-		if (fields.customerLink) patch.customer = fields.customerLink;
+		/* a customer the employee picked from the matches; otherwise the printed name, which
+		   clean()/ensureLink tries as an exact match and drops with a note if ERPNext has none */
+		if (fields.customerLink || fields.customerName) patch.customer = fields.customerLink || fields.customerName;
 	}
 	return patch;
 }
@@ -331,11 +365,12 @@ return {
 	DOCTYPE: DOCTYPE, SECTIONS: SECTIONS, SECTION_NAMES: SECTION_NAMES,
 	normalizeName: normalizeName, diceCoefficient: diceCoefficient,
 	findSupplierMatches: findSupplierMatches, findExactSupplier: findExactSupplier,
+	findCustomerMatches: findCustomerMatches,
 	mergeSupplier: mergeSupplier,
 	suggestParents: suggestParents,
 	sectionPatch: sectionPatch,
 	createMain: createMain, fillSection: fillSection,
-	_internals: { nameScore: nameScore, daysBetween: daysBetween, bigrams: bigrams,
+	_internals: { nameScore: nameScore, customerScore: customerScore, daysBetween: daysBetween, bigrams: bigrams,
 		LEGAL_FORMS: LEGAL_FORMS }
 };
 })();

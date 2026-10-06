@@ -30,8 +30,9 @@ var DOC_TYPES = ["purchase_invoice", "proforma_invoice", "sales_invoice",
 	"customs_declaration", "cd_invoice", "shipping_invoice"];
 
 var SCHEMA_PROMPT =
-"You are reading an accounts document for Integrated Optics UAB (Vilnius, Lithuania; company code 302833442; " +
-"VAT LT100007179012) — that is OUR company. Documents come in English, Lithuanian or German, sometimes mixed. " +
+"You are reading an accounts document for Integrated Optics. We are TWO companies: Integrated Optics UAB " +
+"(Vilnius, Lithuania; company code 302833442; VAT LT100007179012) and its German subsidiary IO Integrated Optics GmbH. " +
+"Both are OUR companies. Documents come in English, Lithuanian or German, sometimes mixed. " +
 "Reply with ONLY a single JSON object — no markdown fences, no commentary — with exactly these keys:\n\n" +
 "{\n" +
 "  \"doc_type\": one of " + JSON.stringify(DOC_TYPES) + ",\n" +
@@ -41,6 +42,10 @@ var SCHEMA_PROMPT =
 "  \"supplier_name\": the company that ISSUED the document, exactly as printed, or null,\n" +
 "  \"supplier_reg_number\": that company's registration number, or null,\n" +
 "  \"supplier_tax_id\": that company's VAT / tax ID, with country prefix, or null,\n" +
+"  \"customer_name\": the company BILLED on the document (the buyer), exactly as printed, or null,\n" +
+"  \"customer_reg_number\": the buyer's registration number, or null,\n" +
+"  \"customer_tax_id\": the buyer's VAT / tax ID, with country prefix, or null,\n" +
+"  \"issuer_is_ours\": true if the document was ISSUED by Integrated Optics UAB or IO Integrated Optics GmbH, else false,\n" +
 "  \"purchase_order_reference\": PO number(s) the document refers to, or null,\n" +
 "  \"currency\": ISO 4217 code, or null,\n" +
 "  \"total_amount\": the gross total payable as a plain JSON number, or null,\n" +
@@ -53,7 +58,8 @@ var SCHEMA_PROMPT =
 "\"Sąskaita\"; German \"Rechnung\", \"Eingangsrechnung\"; English \"Invoice\", \"Tax invoice\", \"Commercial invoice\".\n" +
 "- proforma_invoice: \"Išankstinė sąskaita (faktūra)\", \"Proforma sąskaita\", \"Proformarechnung\", " +
 "\"Pro-forma-Rechnung\", \"Proforma invoice\".\n" +
-"- sales_invoice: an invoice that WE (Integrated Optics) issue to a customer.\n" +
+"- sales_invoice: an invoice that WE issue — i.e. the SELLER is Integrated Optics UAB or IO Integrated Optics GmbH. " +
+"This includes intercompany invoices (UAB selling to GmbH, or GmbH to UAB): the customer is then simply the other one.\n" +
 "- customs_declaration: \"Muitinės deklaracija\", \"Importo / Eksporto deklaracija\", \"Bendrasis administracinis " +
 "dokumentas (BAD)\", \"Zollanmeldung\", \"Einfuhranmeldung\", \"Ausfuhranmeldung\", \"Customs declaration\", " +
 "\"Single Administrative Document (SAD)\". Its document_no is the MRN / registration number.\n" +
@@ -68,10 +74,14 @@ var SCHEMA_PROMPT =
 "\"Išrašė\"; German \"Verkäufer\", \"Lieferant\", \"Rechnungssteller\", \"Aussteller\"; English \"Seller\", " +
 "\"Supplier\", \"Vendor\", \"From\", \"Issued by\". Its name, codes and bank details are often in a letterhead or " +
 "in the FOOTER (next to \"Sąskaitą išrašė\", the IBAN, e-mail and web address) — look there too.\n" +
-"- The BUYER is the party billed. Labels: Lithuanian \"Pirkėjas\", \"Gavėjas\"; German \"Käufer\", \"Kunde\", " +
-"\"Rechnungsempfänger\"; English \"Buyer\", \"Bill to\", \"Customer\", \"Sold to\". Integrated Optics is normally " +
-"the buyer. NEVER put the buyer in supplier_name, supplier_reg_number or supplier_tax_id, and never use " +
-"302833442 or LT100007179012 for the supplier. (Only on a sales_invoice that we issued is Integrated Optics the issuer.)\n" +
+"- The BUYER / CUSTOMER is the party billed. Labels: Lithuanian \"Pirkėjas\", \"Gavėjas\", \"Klientas\"; German \"Käufer\", " +
+"\"Kunde\", \"Rechnungsempfänger\"; English \"Buyer\", \"Bill to\", \"Customer\", \"Sold to\". Put it in customer_*.\n" +
+"- On a document issued BY someone else, Integrated Optics (UAB or GmbH) is normally the buyer: put the issuer in " +
+"supplier_* and our company in customer_*; issuer_is_ours is false. NEVER put the buyer in supplier_name, " +
+"supplier_reg_number or supplier_tax_id, and never use 302833442 or LT100007179012 for another company.\n" +
+"- On a document issued BY Integrated Optics UAB or IO Integrated Optics GmbH (a sales invoice, or a proforma we send): " +
+"issuer_is_ours is true, supplier_* is null, and customer_* is the company we are billing — copy its name exactly as printed " +
+"with its legal form, and its codes. This also holds when UAB bills GmbH or the other way round.\n" +
 "- Copy supplier_name exactly as printed, with its legal form (UAB, AB, MB, IĮ, VšĮ, GmbH, AG, KG, Ltd, …) and " +
 "with Lithuanian/German letters intact (ą č ę ė į š ų ū ž ä ö ü ß).\n\n" +
 "FIELD LABELS in the three languages:\n" +

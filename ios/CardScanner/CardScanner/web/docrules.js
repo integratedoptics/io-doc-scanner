@@ -16,8 +16,12 @@
 window.CS_RULES = (function () {
 "use strict";
 
-/* Our own company. Never the supplier on a purchase invoice, and its
-   registration/VAT codes must never be mistaken for the supplier's. */
+/* Our own companies: Integrated Optics UAB and its German subsidiary IO Integrated
+   Optics GmbH (both contain "integrated optics"). Never the supplier on a purchase
+   invoice, and their registration/VAT codes must never be mistaken for another
+   company's. A document ISSUED by one of them is a sales document; the other party
+   printed on it is the customer. Add the GmbH's USt-IdNr./HRB to `codes` (or call
+   setOwn) once known — name matching works without them. */
 var OWN = { names: ["integrated optics"], codes: ["302833442", "LT100007179012"] };
 function setOwn(o) {
 	if (o && o.names) OWN.names = o.names.map(function (n) { return fold(n).toLowerCase(); });
@@ -183,7 +187,9 @@ var SUFFIX = "(?:UAB|AB|MB|II|VsI|SIA|OU|GmbH(?:\\s*&\\s*Co\\.?\\s*KG)?|AG|KGaA|
 var PREFIX = "(?:UAB|AB|MB|II|VsI|SIA|OU)";
 
 function dropLeadingStops(words) {
-	while (words.length > 1 && STOP_WORDS.indexOf(fold(words[0]).toLowerCase().replace(/[^a-z]/g, "")) >= 0) words.shift();
+	// a code or number printed just before the name ("302833442 Foo, UAB") is not part of it
+	while (words.length > 1 && (/^[\d.,:\-\/]+$/.test(words[0]) ||
+		STOP_WORDS.indexOf(fold(words[0]).toLowerCase().replace(/[^a-z]/g, "")) >= 0)) words.shift();
 	return words;
 }
 
@@ -224,21 +230,47 @@ function companyCandidates(t, orig) {
 var BUYER_CTX = /(pirkejas|gavejas|kunde|kaufer|rechnungsempfanger|bill\s*to|buyer|customer|sold\s*to|ship\s*to|deliver\s*to|klientas|auftraggeber|empfanger)[^a-z0-9]{0,3}$/i;
 var SELLER_CTX = /(pardavejas|tiekejas|israse|issued\s*by|verkaufer|lieferant|rechnungssteller|aussteller|seller|supplier|vendor|from)[^a-z0-9]{0,3}$/i;
 
-function findSupplier(t, orig) {
+/* "UAB" / "GmbH" for one of our own companies, "" otherwise */
+function ownEntity(name) {
+	if (!isOwnName(name)) return "";
+	var f = fold(name).toLowerCase();
+	return /\bgmbh\b/.test(f) ? "GmbH" : (/\buab\b/.test(f) ? "UAB" : "");
+}
+
+/* Who issued the document and who is billed. Labels decide when there are any
+   ("Pardavėjas", "Pirkėjas", "Bill to", "Rechnungsempfänger" …). Without labels:
+   two companies -> the first printed is the issuer; our own company next to a
+   foreign one is taken as the BUYER (most documents scanned here are purchases) —
+   unless the employee chose "Sales Invoice" (hint), which flips that. */
+function findParties(t, orig, hint) {
 	var cands = companyCandidates(t, orig);
-	var best = null, firstForeign = null, ownCand = null;
 	cands.forEach(function (c) {
 		var ctx = t.slice(Math.max(0, c.at - 40), c.at);
 		c.buyer = BUYER_CTX.test(ctx);
 		c.seller = SELLER_CTX.test(ctx);
 		c.own = isOwnName(c.name);
-		if (c.own) { if (!ownCand) ownCand = c; return; }
-		if (c.buyer) return;
-		if (c.seller && !best) best = c;
-		if (!firstForeign) firstForeign = c;
+		c.key = fold(c.name).toLowerCase().replace(/[^a-z0-9]/g, "");
 	});
-	return best || firstForeign || null;
-	/* ownCand is reported separately by the caller (sales invoice case) */
+	var buyer = cands.filter(function (c) { return c.buyer; })[0] || null;
+	var issuer = cands.filter(function (c) { return c.seller && c !== buyer && !(buyer && c.key === buyer.key); })[0] || null;
+	var labelled = !!(buyer || issuer);
+	var rest = cands.filter(function (c) { return c !== buyer && c !== issuer && !(buyer && c.key === buyer.key); });
+
+	if (buyer && !issuer) {
+		issuer = rest[0] || null;
+	} else if (issuer && !buyer) {
+		buyer = rest.filter(function (c) { return c.key !== issuer.key; })[0] || null;
+	} else if (!issuer && !buyer) {
+		var first = rest[0] || null;
+		var second = first ? rest.filter(function (c) { return c.key !== first.key; })[0] || null : null;
+		issuer = first; buyer = second;
+		if (first && second && first.own !== second.own && hint !== "sales_invoice") {
+			// our company beside a foreign one, no labels: assume we are the buyer
+			issuer = first.own ? second : first;
+			buyer = first.own ? first : second;
+		}
+	}
+	return { issuer: issuer, buyer: buyer, labelled: labelled };
 }
 
 /* ------------------------------------------------------------------- codes */
@@ -260,16 +292,23 @@ function findCodes(t) {
 	return { reg: reg, vat: vat };
 }
 
-function nearest(list, from) {
+/* the party a code belongs to: the nearest one printed before it (within 700 characters) */
+function ownerOf(at, parties) {
 	var best = null;
-	list.forEach(function (c) {
-		if (isOwnCode(c.value)) return;
-		var d = c.at - from;
-		if (from >= 0 && d < -20) return;       // codes printed well before the name belong to someone else
-		if (from >= 0 && d > 700) return;
-		if (!best || Math.abs(d) < Math.abs(best.d)) best = { v: c.value, d: d };
+	parties.forEach(function (p) {
+		if (!p || p.at > at + 5 || at - p.at > 700) return;
+		if (!best || p.at > best.at) best = p;
 	});
-	return best ? best.v : null;
+	return best;
+}
+function codeOf(list, party, parties, allowOwn) {
+	for (var i = 0; i < list.length; i++) {
+		var c = list[i];
+		if (ownerOf(c.at, parties) !== party) continue;
+		if (!allowOwn && isOwnCode(c.value)) continue;
+		return c.value;
+	}
+	return null;
 }
 function firstForeignCode(list) {
 	for (var i = 0; i < list.length; i++) if (!isOwnCode(list[i].value)) return list[i].value;
@@ -385,6 +424,8 @@ function parse(text, hint) {
 	var t = fold(orig);
 	var out = { doc_type: null, document_no: null, document_date: null, payment_due_date: null,
 		supplier_name: null, supplier_reg_number: null, supplier_tax_id: null,
+		customer_name: null, customer_reg_number: null, customer_tax_id: null,
+		issuer_is_ours: false, issuer_entity: "",
 		purchase_order_reference: null, currency: null, total_amount: null,
 		confidence: 0, notes: "", language: detectLanguage(t) };
 	if (!t.trim()) return out;
@@ -400,31 +441,48 @@ function parse(text, hint) {
 		if (all.length) out.document_date = all[0].iso;
 	}
 
-	var sup = findSupplier(t, orig);
-	var ownIssuer = false;
-	if (sup) out.supplier_name = sup.name;
-	else {
-		// only our own company printed with a legal form: we issued it (a sales invoice)
-		var own = companyCandidates(t, orig).filter(function (c) { return isOwnName(c.name); })[0];
-		if (own && /seller|pardavejas|israse/i.test(t.slice(Math.max(0, own.at - 40), own.at))) { out.supplier_name = own.name; ownIssuer = true; }
-	}
+	var parties = findParties(t, orig, hint);
+	var issuer = parties.issuer, buyer = parties.buyer;
+	var ours = !!(issuer && issuer.own);
+	out.issuer_is_ours = ours;
+	out.issuer_entity = ours ? ownEntity(issuer.name) : "";
 	var codes = findCodes(t);
-	out.supplier_reg_number = sup ? nearest(codes.reg, sup.at) : firstForeignCode(codes.reg);
-	out.supplier_tax_id = sup ? nearest(codes.vat, sup.at) : firstForeignCode(codes.vat);
-	if (!out.supplier_reg_number && sup) out.supplier_reg_number = firstForeignCode(codes.reg);
-	if (!out.supplier_tax_id && sup) out.supplier_tax_id = firstForeignCode(codes.vat);
+	var both = [issuer, buyer];
+
+	if (ours) {
+		// we issued it: the other party is the customer (also when it is our other company)
+		if (buyer) {
+			out.customer_name = buyer.name;
+			out.customer_reg_number = codeOf(codes.reg, buyer, both, true);
+			out.customer_tax_id = codeOf(codes.vat, buyer, both, true);
+		}
+	} else if (issuer) {
+		out.supplier_name = issuer.name;
+		out.supplier_reg_number = codeOf(codes.reg, issuer, both, false);
+		out.supplier_tax_id = codeOf(codes.vat, issuer, both, false);
+		if (!out.supplier_reg_number) out.supplier_reg_number = firstForeignCode(codes.reg);
+		if (!out.supplier_tax_id) out.supplier_tax_id = firstForeignCode(codes.vat);
+	} else {
+		out.supplier_reg_number = firstForeignCode(codes.reg);
+		out.supplier_tax_id = firstForeignCode(codes.vat);
+	}
 
 	var pos = findPurchaseOrders(t);
 	out.purchase_order_reference = pos.length ? pos.join(", ") : null;
 	out.currency = findCurrency(t);
 	out.total_amount = findTotal(t);
-	out.doc_type = detectType(t, ownIssuer) || hint || null;
+	out.doc_type = detectType(t, ours) || hint || null;
 
-	var found = [out.document_no, out.document_date, out.supplier_name, out.total_amount].filter(function (v) { return v !== null; }).length;
+	var found = [out.document_no, out.document_date, ours ? out.customer_name : out.supplier_name, out.total_amount].filter(function (v) { return v !== null; }).length;
 	out.confidence = Math.round((0.2 + 0.15 * found) * 100) / 100;
 	var notes = ["read by the built-in rules" + (out.language ? " (" + LANG_NAME[out.language] + ")" : "") +
 		" — please check every field"];
-	if (!out.supplier_name) notes.push("supplier not recognised");
+	if (ours) {
+		notes.push("issued by " + (issuer.name || "our company") + " — sales document" +
+			(buyer && isOwnName(buyer.name) ? " (between our own companies — use Purchase Invoice instead if this is the receiving company's purchase)" : ""));
+		if (!out.customer_name) notes.push("customer not recognised");
+	} else if (!out.supplier_name) notes.push("supplier not recognised");
+	if (issuer && buyer && !parties.labelled) notes.push("no seller/buyer labels found — check which company issued it");
 	if (out.payment_due_date === null) notes.push("no payment due date found");
 	out.notes = notes.join("; ");
 	return out;
@@ -432,6 +490,7 @@ function parse(text, hint) {
 
 return {
 	parse: parse, textQuality: textQuality, setOwn: setOwn, isOwnName: isOwnName, isOwnCode: isOwnCode,
+	ownEntity: ownEntity,
 	_internals: { fold: fold, parseAmount: parseAmount, findDates: findDates, detectType: detectType,
 		detectLanguage: detectLanguage, findTotal: findTotal, findDocumentNo: findDocumentNo }
 };

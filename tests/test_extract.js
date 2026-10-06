@@ -35,6 +35,12 @@ function check(l, c) { if (!c) fails++; console.log((c ? "ok   " : "FAIL ") + l)
 	check("key and version headers", sent.headers["x-api-key"] === "k" && !!sent.headers["anthropic-version"]);
 	check("model", sent.body.model === "claude-sonnet-5");
 
+	/* the prompt knows both our companies, the customer fields and the intercompany rule */
+	var SP = X._internals.SCHEMA_PROMPT;
+	check("prompt names both of our companies", /Integrated Optics UAB/.test(SP) && /IO Integrated Optics GmbH/.test(SP));
+	check("prompt asks for the customer and the issuer flag", /customer_name/.test(SP) && /customer_tax_id/.test(SP) && /issuer_is_ours/.test(SP));
+	check("prompt states the intercompany rule", /intercompany/i.test(SP) && /UAB bills GmbH/.test(SP));
+
 	/* PDF and image requests */
 	await X.extractFromFile("data:application/pdf;base64,QUJD", { key: "k" }, "");
 	var c = sent.body.messages[0].content;
