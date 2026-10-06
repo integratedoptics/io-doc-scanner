@@ -18,6 +18,48 @@
 
 const MAX_REDIRECTS = 5;
 
+/* Session cookies. ERPNext's email-and-password mode logs in once at
+   /api/method/login and relies on the "sid" cookie it sets for every call
+   after that. A browser or the Android app keeps that cookie automatically;
+   a bare Node fetch does not, so every follow-up call went out anonymous and
+   ERPNext refused it (403) even though the login itself had succeeded.
+   This is a small in-memory jar, keyed by host (cookies ignore the port),
+   that lives for as long as the app runs — like Android's CookieManager. */
+const jar = new Map();
+
+function jarKey(url) { return bareHost(url.hostname); }
+
+function storeCookies(url, response) {
+	const list = typeof response.headers.getSetCookie === "function" ? response.headers.getSetCookie() : [];
+	if (!list.length) return;
+	const key = jarKey(url);
+	const cookies = jar.get(key) || new Map();
+	list.forEach((line) => {
+		const parts = String(line).split(";");
+		const eq = parts[0].indexOf("=");
+		if (eq < 1) return;
+		const name = parts[0].slice(0, eq).trim();
+		const value = parts[0].slice(eq + 1).trim();
+		let expired = false;
+		parts.slice(1).forEach((attr) => {
+			const m = attr.trim().match(/^(max-age|expires)\s*=\s*(.*)$/i);
+			if (!m) return;
+			if (/max-age/i.test(m[1]) && Number(m[2]) <= 0) expired = true;
+			if (/expires/i.test(m[1]) && Date.parse(m[2]) < Date.now()) expired = true;
+		});
+		if (expired || value === "") cookies.delete(name); else cookies.set(name, value);
+	});
+	jar.set(key, cookies);
+}
+
+function cookieHeader(url) {
+	const cookies = jar.get(jarKey(url));
+	if (!cookies || !cookies.size) return "";
+	return Array.from(cookies.entries()).map((kv) => kv[0] + "=" + kv[1]).join("; ");
+}
+
+function clearCookies() { jar.clear(); }
+
 function bareHost(host) {
 	return String(host || "").toLowerCase().replace(/^www\./, "");
 }
@@ -36,16 +78,21 @@ async function request(opts) {
 		let headers = Object.assign({}, opts.headers || {});
 		let body = opts.body || undefined;
 		const hops = [];
+			let cookieSent = false;
 
 		for (let i = 0; i <= MAX_REDIRECTS; i++) {
 			const bodyless = method === "GET" || method === "HEAD";
+			const sendHeaders = Object.assign({}, headers);
+			const jarCookie = cookieHeader(url);
+			if (jarCookie && !Object.keys(sendHeaders).some((k) => /^cookie$/i.test(k))) { sendHeaders["Cookie"] = jarCookie; cookieSent = true; }
 			const r = await fetch(url.href, {
 				method: method,
-				headers: headers,
+				headers: sendHeaders,
 				body: bodyless ? undefined : body,
 				redirect: "manual",
 				signal: ctrl.signal
 			});
+			storeCookies(url, r);
 			const loc = r.headers.get("location");
 			if (r.status >= 300 && r.status < 400 && loc) {
 				const next = new URL(loc, url);
@@ -65,7 +112,7 @@ async function request(opts) {
 				continue;
 			}
 			const text = await r.text();
-			return { ok: true, status: r.status, body: text, finalUrl: url.href, hops: hops };
+			return { ok: true, status: r.status, body: text, finalUrl: url.href, hops: hops, cookieSent: cookieSent };
 		}
 		return { ok: false, error: "Too many redirects from " + opts.url + "." };
 	} catch (e) {
@@ -78,4 +125,4 @@ async function request(opts) {
 	}
 }
 
-module.exports = { request, sameSite };
+module.exports = { request, sameSite, clearCookies };

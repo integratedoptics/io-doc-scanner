@@ -6,6 +6,9 @@ function check(l, c) { if (c) console.log("ok   " + l); else { fails++; console.
 const seen = {};
 const target = http.createServer((req, res) => {
   seen[req.url] = req.headers.authorization || null;
+  if (req.url === "/login") { res.setHeader("Set-Cookie", ["sid=abc123; Path=/; HttpOnly", "user_id=a%40b.c; Path=/"]); }
+  if (req.url === "/logout") { res.setHeader("Set-Cookie", ["sid=; Max-Age=0; Path=/"]); }
+  if (req.url === "/whoami") { res.end(JSON.stringify({ cookie: req.headers.cookie || null })); return; }
   res.end(JSON.stringify({ auth: req.headers.authorization || null, method: req.method }));
 }).listen(0, "127.0.0.1", async () => {
   const tp = target.address().port;
@@ -38,6 +41,19 @@ const target = http.createServer((req, res) => {
 
     const e = await request({ url: "http://127.0.0.1:1/nothing", headers: H, timeoutMs: 3000 });
     check("connection refused is an error, not a throw", e.ok === false);
+
+    // session cookie from the login call is replayed on later calls (login mode)
+    const base = "http://127.0.0.1:" + tp;
+    const w0 = await request({ url: base + "/whoami" });
+    check("no cookie before login", JSON.parse(w0.body).cookie === null);
+    await request({ url: base + "/login", method: "POST", body: "usr=a&pwd=b" });
+    const w1 = await request({ url: base + "/whoami" });
+    check("session cookie is sent after login", /sid=abc123/.test(JSON.parse(w1.body).cookie) && /user_id=a%40b.c/.test(JSON.parse(w1.body).cookie));
+    const w2 = await request({ url: base + "/whoami", headers: { Cookie: "own=1" } });
+    check("a caller-supplied Cookie header is not overridden", JSON.parse(w2.body).cookie === "own=1");
+    await request({ url: base + "/logout" });
+    const w3 = await request({ url: base + "/whoami" });
+    check("expired cookie is dropped", !/sid=/.test(JSON.parse(w3.body).cookie || ""));
 
     console.log(fails ? fails + " failed" : "all passed");
     process.exit(fails ? 1 : 0);

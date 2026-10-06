@@ -100,7 +100,7 @@ ipcMain.handle("http-fetch", async (event, req) => {
 	if (r.hops && r.hops.length) console.log("[http] redirects:", r.hops.join(" | "));
 	// one line per request, never the credentials themselves
 	const hasAuth = Object.keys((req && req.headers) || {}).some((k) => /^authorization$/i.test(k));
-	console.log("[http]", (req && req.method) || "GET", req.url, "auth:" + (hasAuth ? "yes" : "no"),
+	console.log("[http]", (req && req.method) || "GET", req.url, "auth:" + (hasAuth ? "yes" : "no"), "cookie:" + (r.cookieSent ? "yes" : "no"),
 		"->", r.ok ? r.status : "ERR " + r.error,
 		r.ok && r.status >= 400 ? String(r.body).slice(0, 200).replace(/\s+/g, " ") : "");
 	return r;
