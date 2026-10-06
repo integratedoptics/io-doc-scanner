@@ -658,33 +658,28 @@ function refreshVocabulary() {
 function testConnection() {
 	var bad = ready();
 	if (bad) return Promise.reject(new Error(bad));
+	/* Same check the first versions made: read the Territory and Country lists.
+	   Only when BOTH come back refused do we ask ERPNext who it thinks is calling,
+	   to tell "key not recognised" apart from "user lacks read rights". */
 	return login()
-		.then(function () {
-			return request("GET", methodUrl("frappe.auth.get_logged_user"), authHeaders(false), "", 30);
-		})
-		.then(function (r) {
-			if (r.status === 401 || r.status === 403) {
-				var errs = toErrors(r.status, r.body, "login");
-				var e = new Error(errs[0].message);
-				e.errors = errs;
-				throw e;
-			}
-			/* get_logged_user answers "Guest" with a 200 when ERPNext did not recognise
-			   the credentials at all (header missing/mangled, or key+secret not
-			   matching a user) — which later shows up as a confusing permission
-			   error on whatever is read first. Say so here instead. */
-			var who = "";
-			try { who = (JSON.parse(r.body || "{}").message || ""); } catch (x) { who = ""; }
-			if (cfg.mode === "token" && String(who).toLowerCase() === "guest") {
-				var ge = new Error("ERPNext did not recognise the API key and secret — it treats this " +
-					"connection as not signed in (Guest). Re-copy both from ERPNext (User \u2192 API Access), " +
-					"check the address has no typos, and make sure the key belongs to an enabled user.");
-				ge.errors = [{ field: "", message: ge.message }];
-				throw ge;
-			}
-			/* any other answer (even a 404 from an unusual setup) is not proof the
-			   credentials are wrong — carry on and let the real calls speak */
-			return refreshVocabulary();
+		.then(function () { return refreshVocabulary(); })
+		.then(function (v) {
+			if (cfg.mode !== "token" || !v.unreadable || v.unreadable.length < 2) return v;
+			return request("GET", methodUrl("frappe.auth.get_logged_user"), authHeaders(false), "", 30)
+				.then(function (r) {
+					var who = "";
+					try { who = (JSON.parse(r.body || "{}").message || ""); } catch (x) { who = ""; }
+					var anon = !who || String(who).toLowerCase() === "guest" || r.status === 401 || r.status === 403;
+					if (!anon) return v;
+					var ge = new Error("ERPNext is not recognising the API key and secret this app sends " +
+						"— it answers as if nobody were signed in (HTTP " + r.status + (who ? ", \u201c" + who + "\u201d" : "") +
+						"). The app is sending a key of " + cfg.key.length + " characters (starts \u201c" +
+						cfg.key.slice(0, 4) + "\u201d) and a secret of " + cfg.secret.length + " characters to " +
+						cfg.url + ". Compare with ERPNext \u2192 User \u2192 API Access, and re-enter both in " +
+						"this app\u2019s own Settings (they are not shared with the phone app).");
+					ge.errors = [{ field: "", message: ge.message }];
+					throw ge;
+				}, function () { return v; });
 		});
 }
 
