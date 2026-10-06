@@ -59,8 +59,20 @@ function extractText(dataUrl) {
 				return doc.getPage(pageNo).then(function (page) {
 					return page.getTextContent().then(function (tc) {
 						var line = tc.items.map(function (it) { return it.str; }).join(" ");
-						acc.push(line);
-						return acc;
+						/* fillable PDF forms (a bank's payment order, for one) keep what was typed into the fields
+						   as annotations, not as page text — add those values so they are read too */
+						return Promise.resolve(page.getAnnotations ? page.getAnnotations() : []).then(function (anns) {
+							var vals = [];
+							(anns || []).forEach(function (a) {
+								var v = a && (a.fieldValue !== undefined ? a.fieldValue : a.buttonValue);
+								if (Array.isArray(v)) v = v.join(" ");
+								if (typeof v === "string" && v.trim() && !/^(off|yes|on|no)$/i.test(v.trim())) vals.push(v.trim());
+							});
+							return vals;
+						}, function () { return []; }).then(function (vals) {
+							acc.push(vals.length ? line + " " + vals.join(" ") : line);
+							return acc;
+						});
 					});
 				});
 			});

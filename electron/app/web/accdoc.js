@@ -246,25 +246,63 @@ function daysBetween(a, b) {
    document. Only PURCHASE- records are considered: these three sections
    only make sense against a purchase, never a sale or a standalone
    proforma. */
+/* "PO:08353", "PO 08353", "P.O. 08353", "po-08353" -> "PO-08353"; anything else unchanged (upper-cased) */
+function normPo(v) {
+	var t = String(v || "").trim();
+	var m = /^P\.?O\.?[-\s#:]*(\d[A-Za-z0-9\-]*)$/i.exec(t);
+	return m ? "PO-" + m[1].toUpperCase() : t.toUpperCase();
+}
+function refKey(v) { return normPo(v).replace(/\s+/g, ""); }
+
+/* Every number on the scanned document that could tie it to an existing record: its own number, the
+   PO(s), a sales invoice reference, and whatever else it cites (invoice numbers, the customs MRN,
+   waybill / tracking numbers, SO / proforma numbers). */
+function referenceSet(fields) {
+	var out = {};
+	function add(v) { v = refKey(v); if (v) out[v] = 1; }
+	add(fields.documentNo);
+	add(fields.salesInvoiceReference);
+	String(fields.purchaseOrderReference || "").split(/[,;]/).forEach(add);
+	(fields.references || []).forEach(add);
+	return out;
+}
+
+var REF_COLUMNS = [["document_no", "invoice no. matches"], ["purchase_order_reference", "same PO reference"],
+	["sales_invoice_reference", "same sales invoice"], ["cd_document_no", "customs declaration no. matches"],
+	["cd_invoice_document_no", "customs invoice no. matches"], ["shipping_invoice_document_no", "shipping document no. matches"],
+	["name", "same record"]];
+
+/* Finds the Accounts Documents a scanned document most likely belongs to, in any series
+   (PURCHASE-, SALES-, PROFORMA-). A shared number — PO, invoice no., customs MRN, sales invoice —
+   is decisive; supplier/customer name and date proximity are the fallback. */
 function suggestParents(fields, opts) {
 	opts = opts || {};
 	var windowDays = opts.windowDays == null ? 30 : opts.windowDays;
-	var supplierName = fields.supplierName || "";
-	var supplierCode = fields.supplierCode || "";
-	var poRef = fields.purchaseOrderReference || "";
+	var partyName = fields.supplierName || fields.customerName || "";
+	var partyCode = fields.supplierCode || "";
 	var docDate = fields.documentDate || "";
+	var refs = referenceSet(fields);
+	var cols = ["name", "naming_series", "supplier", "supplier_code", "customer", "document_date", "document_no",
+		"purchase_order_reference", "sales_invoice_reference", "cd_document_no", "cd_invoice_document_no",
+		"shipping_invoice_document_no"];
+	var base = ["name", "naming_series", "supplier", "supplier_code", "document_date", "purchase_order_reference", "document_no"];
 
-	return erp().getList(DOCTYPE, [["naming_series", "=", "PURCHASE-"]],
-			["name", "supplier", "supplier_code", "document_date",
-				"purchase_order_reference", "document_no"], 200)
+	return erp().getList(DOCTYPE, null, cols, 300, "modified desc")
+		.catch(function () { return erp().getList(DOCTYPE, null, base, 300); })
 		.then(function (rows) {
 			var scored = rows.map(function (r) {
-				var s = nameScore(supplierName, supplierCode,
-					{ supplier_name: r.supplier || "", supplier_code: r.supplier_code || "" });
-				var reasons = [];
-				var score = 0.5 * s.score;
+				var reasons = [], score = 0, hits = 0;
+				REF_COLUMNS.forEach(function (c) {
+					var v = r[c[0]];
+					if (v && v !== "" && refs[refKey(v)]) { hits++; reasons.push(c[1]); }
+				});
+				if (hits) score += Math.min(1, 0.9 + 0.05 * (hits - 1));
+
+				var s = nameScore(partyName, partyCode,
+					{ supplier_name: r.supplier || r.customer || "", supplier_code: r.supplier_code || "" });
+				score += 0.5 * s.score;
 				if (s.codeMatch) reasons.push("supplier code matches");
-				else if (s.score > 0.8) reasons.push("supplier name matches closely");
+				else if (s.score > 0.8) reasons.push("name matches closely");
 
 				if (docDate && r.document_date) {
 					var dd = daysBetween(docDate, r.document_date);
@@ -273,19 +311,39 @@ function suggestParents(fields, opts) {
 						reasons.push(dd < 1 ? "same date" : Math.round(dd) + " day(s) apart");
 					}
 				}
-				if (poRef && r.purchase_order_reference && String(poRef).trim()
-						.toLowerCase() === String(r.purchase_order_reference).trim().toLowerCase()) {
-					score += 0.15;
-					reasons.push("same PO reference");
-				}
-				return { name: r.name, document_no: r.document_no,
-					supplier: r.supplier, document_date: r.document_date,
-					score: score, reasons: reasons };
+				return { name: r.name, document_no: r.document_no, series: r.naming_series || "",
+					supplier: r.supplier || r.customer || "", document_date: r.document_date,
+					score: Math.min(score, 1.5), exact: hits > 0, reasons: reasons };
 			});
-			return scored.filter(function (c) { return c.score >= 0.3; })
+			return scored.filter(function (c) { return c.exact || c.score >= 0.3; })
 				.sort(function (a, b) { return b.score - a.score; })
 				.slice(0, 5);
 		});
+}
+
+/* Files a supporting paper (waybill, courier label, payment order, …) on an existing Accounts Document
+   as a plain attachment — no field is filled in. */
+function attachToParent(parentName, fileDataUrl, fileName) {
+	if (!parentName) return Promise.reject(new Error("Pick the record to attach it to first."));
+	return erp().attachFile(DOCTYPE, parentName, fileDataUrl, fileName, "").then(function (r) {
+		return { name: parentName, section: "attachment", file: r, notes: [] };
+	});
+}
+
+/* Do the PO numbers (and a sales invoice number) printed on the document exist in ERPNext?
+   Resolves { po: { "PO-08353": true|false }, salesInvoice: true|false|null }; `null` / `true` when
+   it cannot tell (e.g. no read permission), so nothing is flagged by mistake. */
+function checkReferences(poList, salesInvoice) {
+	var e = erp(), out = { po: {}, salesInvoice: null };
+	function exists(doctype, name) {
+		return e.getList(doctype, [["name", "=", name]], ["name"], 1)
+			.then(function (rows) { return rows.length > 0; }, function () { return null; });
+	}
+	var jobs = (poList || []).map(function (po) {
+		return exists("Purchase Order", normPo(po)).then(function (ok) { out.po[normPo(po)] = ok; });
+	});
+	if (salesInvoice) jobs.push(exists("Sales Invoice", salesInvoice).then(function (ok) { out.salesInvoice = ok; }));
+	return Promise.all(jobs).then(function () { return out; });
 }
 
 /* ------------------------------------------------------------- section fill */
@@ -308,8 +366,14 @@ function sectionPatch(section, fields) {
 	if (section === "main") {
 		if (fields.paymentDueDate) patch.payment_due_date = fields.paymentDueDate;
 		if (fields.namingSeries) patch.naming_series = fields.namingSeries;
-		if (fields.purchaseOrderReference) {
-			patch.purchase_order_reference = fields.purchaseOrderReference;
+		/* a PO that exists in ERPNext goes into the Link field; one that could not be matched is left
+		   out and written into the comment, so the logistics specialist finds it and matches it by hand */
+		var unmatched = fields.poUnmatched || [];
+		var linkPo = fields.poMatched && fields.poMatched.length ? fields.poMatched[0] : (unmatched.length ? "" : fields.purchaseOrderReference);
+		if (linkPo) patch.purchase_order_reference = linkPo;
+		if (unmatched.length) {
+			patch.comment = "PO reference on the document (" + unmatched.join(", ") +
+				") could not be matched to a Purchase Order in ERPNext — please find it and set it manually.";
 		}
 		if (fields.salesInvoiceReference) {
 			patch.sales_invoice_reference = fields.salesInvoiceReference;
@@ -367,10 +431,10 @@ return {
 	findSupplierMatches: findSupplierMatches, findExactSupplier: findExactSupplier,
 	findCustomerMatches: findCustomerMatches,
 	mergeSupplier: mergeSupplier,
-	suggestParents: suggestParents,
+	suggestParents: suggestParents, attachToParent: attachToParent, checkReferences: checkReferences,
 	sectionPatch: sectionPatch,
 	createMain: createMain, fillSection: fillSection,
-	_internals: { nameScore: nameScore, customerScore: customerScore, daysBetween: daysBetween, bigrams: bigrams,
+	_internals: { normPo: normPo, referenceSet: referenceSet, nameScore: nameScore, customerScore: customerScore, daysBetween: daysBetween, bigrams: bigrams,
 		LEGAL_FORMS: LEGAL_FORMS }
 };
 })();

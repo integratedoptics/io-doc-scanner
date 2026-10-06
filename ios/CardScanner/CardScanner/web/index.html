@@ -106,6 +106,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--orange);
 textarea{min-height:88px;resize:vertical;font-size:13px}
 .f{margin-bottom:10px}
 .hint{font-size:12px;color:var(--dgrey);margin:6px 0 0}
+input.warn{border-color:#d98300;background:rgba(217,131,0,.10)}
+.warntext{color:#b86e00}
 .mand{color:var(--orange);font-weight:bold}
 .pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;background:var(--po);border:1px solid var(--orange);color:var(--black);margin:0 5px 5px 0}
 
@@ -504,6 +506,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
           <option value="customs_declaration">Customs Declaration</option>
           <option value="cd_invoice">Customs Declaration Invoice</option>
           <option value="shipping_invoice">Shipping Invoice</option>
+          <option value="attachment">Attachment only (waybill, label, payment order…)</option>
         </select>
       </div>
       <button class="b" id="btn-doc-pick">Choose a PDF or picture</button>
@@ -527,9 +530,11 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       </div>
       <div class="f" id="d-row-po">
         <label>Purchase order reference</label><input id="d-purchase_order_reference">
+        <p class="hint" id="d-po-status"></p>
       </div>
       <div class="f" id="d-row-sales" style="display:none">
         <label>Sales invoice reference</label><input id="d-sales_invoice_reference">
+        <p class="hint" id="d-sales-status"></p>
       </div>
 
       <div class="f" id="d-row-direction" style="display:none">
@@ -568,7 +573,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <p class="hint">Currency and total are shown so you can sanity-check the scan against the document — they are not written to ERPNext by this screen.</p>
 
       <div id="d-row-parent" style="display:none">
-        <h2 style="margin-top:16px">Parent purchase document</h2>
+        <h2 style="margin-top:16px" id="d-parent-title">Record to file it under</h2>
         <div class="f"><label>Likely match</label>
           <select id="d-parent"></select>
           <p class="hint" id="d-parent-hint"></p>

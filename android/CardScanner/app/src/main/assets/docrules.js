@@ -105,10 +105,13 @@ function findDates(t) {
 	re = /(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?!\d)/g;                       // 2026-04-22, 2026.04.22
 	while ((m = re.exec(t))) add(m.index, m[0].length, iso(m[1], m[2], m[3]));
 
+	re = /\b(\d{1,2})([A-Za-z]{3})(\d{2})\b/g;                               // 23SEP26
+	while ((m = re.exec(t))) { var cm = monthFromWord(m[2]); if (cm) add(m.index, m[0].length, iso(m[3], cm, m[1])); }
+
 	re = /(\d{4})\s*m\.?\s*([A-Za-z]{3,})\s*(\d{1,2})\s*d?\b/gi;                // 2026 m. balandzio 22 d.
 	while ((m = re.exec(t))) { var lm = monthFromWord(m[2]); if (lm) add(m.index, m[0].length, iso(m[1], lm, m[3])); }
 
-	re = /(\d{1,2})(?:st|nd|rd|th)?\.?\s*(?:of\s+)?([A-Za-z]{3,})\.?,?\s*(\d{4})/gi;  // 22. April 2026, 22 Apr 2026
+	re = /(\d{1,2})(?:st|nd|rd|th)?[\s.\-]*(?:of\s+)?([A-Za-z]{3,})[\s.,\-]*(\d{4})/gi;  // 22. April 2026, 22 Apr 2026
 	while ((m = re.exec(t))) { var dm = monthFromWord(m[2]); if (dm) add(m.index, m[0].length, iso(m[3], dm, m[1])); }
 
 	re = /([A-Za-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/gi;          // April 22, 2026
@@ -176,7 +179,26 @@ function findDocumentNo(t, orig) {
 		var v = tidy(m[1]);
 		if (/\d/.test(v) && !/^\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}$/.test(v)) return v;
 	}
+	// a bare "No :BST260915-B17720"
+	re = /(?:^|[\s(])no\s*[:.]\s*([A-Za-z0-9][A-Za-z0-9\-\/]{3,24})/gi;
+	while ((m = re.exec(t))) {
+		var pre = t.slice(Math.max(0, m.index - 12), m.index).toLowerCase();
+		if (/(vat|pvm|tax|reg|order|po|sales|tel|fax|phone)\s*$/.test(pre)) continue;
+		if (/\d/.test(m[1]) && !/^\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}$/.test(m[1]) && !/^(LT|DE|GB|PL|LV|EE)\d{8,}$/.test(m[1])) return tidy(m[1]);
+	}
+	// an unlabelled number printed right after the heading ("SALES INVOICE IO26-02602")
+	re = /(?:sales\s+invoice|saskaita[\s-]*faktura|rechnung|invoice)\s+([A-Z]{1,6}[A-Z0-9]*\d[A-Z0-9\-\/]{2,20})(?![A-Za-z0-9])/gi;
+	while ((m = re.exec(t))) {
+		if (m[1] !== m[1].toUpperCase()) continue;                // the number is printed in capitals, "date"/"Number" are words
+		if (/\d{3}/.test(m[1]) && !/^\d{4}-\d{2}-\d{2}$/.test(m[1])) return tidy(m[1]);
+	}
 	return null;
+}
+
+/* Customs declarations (EU): the 18-character Movement Reference Number, e.g. 26LTVA100025C7F4R1 */
+function findMrn(t) {
+	var m = /(?:^|[^A-Za-z0-9])(\d{2}[A-Z]{2}[A-Z0-9]{14})(?![A-Za-z0-9])/.exec(t);
+	return m ? { value: m[1], at: m.index + m[0].indexOf(m[1]) } : null;
 }
 
 /* ---------------------------------------------------------------- supplier */
@@ -185,10 +207,14 @@ var STOP_WORDS = ["pvm", "saskaita", "saskaitos", "faktura", "invoice", "rechnun
 	"pirkejas", "pardavejas", "tiekejas", "seller", "buyer", "from", "to", "bill", "sold", "verkaufer", "kaufer",
 	"lieferant", "kunde", "adresas", "address", "adresse", "company", "code", "vat", "no", "nr", "tel", "email",
 	"proforma", "pro", "forma", "isankstine", "kreditine", "debetine", "page", "puslapis", "seite", "the", "and",
-	"imones", "kodas", "reg", "registration", "registrierung", "iban", "tel", "fax", "web", "www", "adr"];
+	"imones", "kodas", "reg", "registration", "registrierung", "iban", "tel", "fax", "web", "www", "adr",
+	"customer", "supplier", "vendor", "klientas", "gavejas"];
+/* label words that can never be inside a company name; whatever precedes them belongs to something else */
+var MID_STOPS = ["adresas", "address", "adresse", "tel", "fax", "email", "kodas", "code", "nr", "no", "data", "date",
+	"datum", "vat", "pvm", "iban", "reg", "www", "web", "adr", "bankas", "bank"];
 var BANK_RE = /bank|banka|bankas|sparkasse|volksbank|credit|luminor|revolut|paysera|swedbank|\bseb\b|citadele|siauliu|dnb|nordea/i;
 
-var SUFFIX = "(?:UAB|AB|MB|II|VsI|SIA|OU|GmbH(?:\\s*&\\s*Co\\.?\\s*KG)?|AG|KGaA|KG|OHG|UG|e\\.K\\.|eG|Ltd\\.?|LLC|Inc\\.?|Oy|BV|SARL|S\\.r\\.l\\.|S\\.A\\.|Sp\\.\\s*z\\s*o\\.o\\.)";
+var SUFFIX = "(?:UAB|AB|MB|II|VsI|SIA|OU|GmbH(?:\\s*&\\s*Co\\.?\\s*KG)?|GMBH|AG|KGaA|KG|OHG|UG|e\\.K\\.|eG|Co\\.?\\s*,?\\s*(?:Ltd\\.?|LTD\\.?|Limited|LIMITED)|Ltd\\.?|LTD\\.?|Limited|LIMITED|LLC|Inc\\.?|INC\\.?|Corp\\.?|CORP\\.?|Corporation|PLC|LLP|Pty\\.?\\s*Ltd\\.?|Oy|BV|SARL|S\\.r\\.l\\.|S\\.A\\.|Sp\\.\\s*z\\s*o\\.o\\.)";
 var PREFIX = "(?:UAB|AB|MB|II|VsI|SIA|OU)";
 
 function dropLeadingStops(words) {
@@ -201,25 +227,34 @@ function dropLeadingStops(words) {
 function companyCandidates(t, orig) {
 	var out = [], m, re;
 	// "ESEMDA, UAB"  /  "Müller Optik GmbH"
-	re = new RegExp("((?:[A-Z0-9][\\w&'.\\-]*\\s+){0,4}[A-Z0-9][\\w&'.\\-]*)\\s*,?\\s*(" + SUFFIX + ")(?![A-Za-z])", "g");
+	re = new RegExp("((?:[A-Z0-9][\\w&'.\\-]*\\s+){0,4}[A-Z0-9][\\w&'.\\-]*)(?:\\s*,\\s*|\\s+)(" + SUFFIX + ")(?![A-Za-z])", "g");
 	while ((m = re.exec(t))) {
 		var words = dropLeadingStops(m[1].split(/\s+/));
-		var lead = m[1].length - words.join(" ").length;
-		if (lead < 0) lead = 0;
+		// "VILNIUS 08338 Adresas UAB “DHL …”": the words before a label or a bare number are not the name
+		var cut = -1;
+		words.forEach(function (w, wi) {
+			var k = fold(w).toLowerCase().replace(/[^a-z0-9]/g, "");
+			if (/^\d+$/.test(k) || MID_STOPS.indexOf(k) >= 0) cut = wi;
+		});
+		if (cut >= 0) words = words.slice(cut + 1);
+		if (!words.length) continue;
 		var start = m.index + (m[1].length - words.join(" ").length);
 		var end = m.index + m[0].length;
 		out.push({ name: tidy(orig.slice(start, end)), at: start, end: end });
 	}
 	// "UAB Foo Bar" — only when that UAB is not just the tail of an earlier "Foo, UAB"
 	var suffixed = out.slice();
-	re = new RegExp("\\b(" + PREFIX + ")\\s+((?:[A-Z0-9][\\w&'.\\-]*\\s*){1,4})", "g");
+	re = new RegExp("\\b(" + PREFIX + ")\\s+[\"']?((?:[A-Z0-9][\\w&'.\\-]*[\"']?\\s*){1,4})", "g");
 	while ((m = re.exec(t))) {
 		var at = m.index;
 		if (suffixed.some(function (c) { return c.end > at && c.end <= at + 6; })) continue;
 		var toks = orig.slice(m.index, m.index + m[0].length).split(/\s+/).filter(Boolean);
+		if (toks.length > 1 && /^[„“"]/.test(toks[1])) {          // UAB "DHL LIETUVA": the name ends at the closing quote
+			for (var qi = 1; qi < toks.length; qi++) if (/[”“"]$/.test(toks[qi])) { toks = toks.slice(0, qi + 1); break; }
+		}
 		while (toks.length > 1 && STOP_WORDS.indexOf(fold(toks[toks.length - 1]).toLowerCase().replace(/[^a-z]/g, "")) >= 0) toks.pop();
 		if (toks.length < 2) continue;
-		var nm = tidy(toks.join(" "));
+		var nm = tidy(toks.join(" ").replace(/[„“”"]/g, ""));
 		out.push({ name: nm, at: at, end: at + nm.length });
 	}
 	out.sort(function (a, b) { return a.at - b.at; });
@@ -328,11 +363,41 @@ function findPurchaseOrders(t) {
 		v = tidy(v).toUpperCase();
 		if (v.length >= 4 && /\d/.test(v) && !seen[v]) { seen[v] = 1; out.push(v); }
 	}
-	var re = /\b(?:PO|P\.O\.)[-\s#:]?\s?\d{3,}[A-Z0-9\-]*/gi;
-	while ((m = re.exec(t))) push(m[0].replace(/\s+/g, "-").replace(/^P\.O\.-?/i, "PO-"));
-	re = /(?:uzsakymo\s*(?:nr|numeris)|bestell(?:nummer|nr)|ihre\s*bestellung|ihr\s*auftrag|auftrags(?:nummer|nr)|purchase\s*order(?:\s*(?:no|nr|number))?|order\s*(?:no|nr|number|ref\w*)|your\s*order|customer\s*order)\b\.?\s*[:#.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{3,20})/gi;
+	// "PO-08353", "PO:08353", "PO 08353", "P.O. 08353", "PO08353" -> "PO-08353"
+	var re = /\b(?:PO|P\.O\.)[-\s#:]*(\d{3,}[A-Z0-9\-]*)/gi;
+	while ((m = re.exec(t))) push("PO-" + m[1]);
+	re = /\bP\.?O\.?\s*:\s*#?\s*([A-Za-z][A-Za-z0-9\-]{3,})/g;               // "PO: #UNI-26387" (a customer's own format)
 	while ((m = re.exec(t))) push(m[1]);
+	re = /(?:uzsakymo\s*(?:nr|numeris)|bestell(?:nummer|nr)|ihre\s*bestellung|ihr\s*auftrag|auftrags(?:nummer|nr)|purchase\s*order(?:\s*(?:no|nr|number))?|order\s*(?:no|nr|number|ref\w*)|your\s*order|customer\s*order)\b\.?\s*[:#.]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]{3,20})/gi;
+	while ((m = re.exec(t))) {
+		if (/payment\s*$/i.test(t.slice(Math.max(0, m.index - 9), m.index))) continue;     // "Payment Order No."
+		push(m[1]);
+	}
 	return out.slice(0, 6);
+}
+
+/* Numbers that tie the documents of one purchase or sale together: PO, sales order,
+   proforma, customs MRN, waybill / tracking numbers. `exclude` = the document's own number. */
+function findReferences(t, exclude) {
+	var out = [], seen = {}, m;
+	function push(v) {
+		v = tidy(v);
+		var k = v.toUpperCase();
+		if (!v || seen[k] || (exclude && k === String(exclude).toUpperCase())) return;
+		seen[k] = 1; out.push(v);
+	}
+	findPurchaseOrders(t).forEach(push);
+	var re = /\b(?:SO|PIN|PINV|SINV|SQ|QTN)-\d{3,}[A-Z0-9\-]*/g;
+	while ((m = re.exec(t))) push(m[0]);
+	re = /(?:^|[^A-Za-z0-9])(\d{2}[A-Z]{2}[A-Z0-9]{14})(?![A-Za-z0-9])/g;
+	while ((m = re.exec(t))) push(m[1]);
+	re = /(?:waybill|airwaybill|\bawb\b|\btrk#?|tracking(?:\s*(?:no|nr|number|#))?|vaztarastis|vaztarascio\s*nr|frachtbrief|sendungsnummer)\b[^0-9]{0,24}?(\d[\d ]{8,16}\d)/gi;
+	while ((m = re.exec(t))) push(m[1].replace(/\s+/g, ""));
+	re = /\b(\d{4}) (\d{4}) (\d{4})\b/g;                                    // courier tracking number printed in groups
+	while ((m = re.exec(t))) push(m[1] + m[2] + m[3]);
+	re = /\bN(?:380|740|760)\s+([A-Z0-9][A-Za-z0-9\-]{5,24})/g;           // customs document codes: invoice / waybill numbers
+	while ((m = re.exec(t))) push(m[1]);
+	return out.slice(0, 10);
 }
 
 /* ---------------------------------------------------------------- currency */
@@ -353,7 +418,7 @@ function findCurrency(t) {
 var STRONG_TOTAL = ["suma\\s*(?:moketi|apmoketi)?\\s*,?\\s*(?:eur|usd|gbp)", "moketina\\s*suma", "viso\\s*moketi", "viso\\s*apmoketi",
 	"viso\\s*su\\s*pvm", "suma\\s*su\\s*pvm", "bendra\\s*suma", "gesamtbetrag", "rechnungsbetrag", "rechnungssumme", "bruttobetrag",
 	"zahlbetrag", "endbetrag", "gesamtsumme", "zu\\s*zahlen", "amount\\s*due", "total\\s*due", "grand\\s*total", "total\\s*amount",
-	"balance\\s*due", "invoice\\s*total", "total\\s*incl\\w*\\.?\\s*(?:vat|tax)", "total\\s*\\(?(?:eur|usd|gbp)\\)?"];
+	"balance\\s*due", "invoice\\s*total", "total\\s*value", "total\\s*incl\\w*\\.?\\s*(?:vat|tax)", "total\\s*\\(?(?:eur|usd|gbp)\\)?"];
 var WEAK_TOTAL = ["viso", "total", "summe", "suma"];
 var NET_WORDS = /^[^0-9]{0,22}?(be\s*pvm|ohne|excl|exkl|netto|net\b|before\s*vat|zwischen|sub)/i;
 
@@ -396,16 +461,22 @@ var LANG_NAME = { lt: "Lithuanian", de: "German", en: "English" };
 
 function detectType(t, supplierIsOwn) {
 	var f = t.toLowerCase();
+	var head = f.slice(0, 700);
 	var hasInvoice = /saskaita|rechnung|invoice|faktura/.test(f);
-	var decl = /muitines\s*deklaracij|importo\s*deklaracij|eksporto\s*deklaracij|bendrasis\s*administracinis|zollanmeldung|einfuhranmeldung|ausfuhranmeldung|customs\s*declaration|single\s*administrative\s*document|import\s*declaration|export\s*declaration/.test(f);
-	var broker = /muitines\s*tarpinink|muitines\s*paslaug|zollabfertigung|zollagent|customs\s*clearance|customs\s*broker|brokerage/.test(f);
+	var decl = /muitines\s*deklaracij|importo\s*deklaracij|eksporto\s*deklaracij|bendrasis\s*administracinis|zollanmeldung|einfuhranmeldung|ausfuhranmeldung|customs\s*declaration|single\s*administrative\s*document|import\s*declaration|export\s*declaration|\bd\s*e\s*k\s*l\s*a\s*r\s*a\s*c\s*i\s*j\s*a\b/.test(f);
+	var broker = /muitines\s*tarpinink|muitines\s*paslaug|tarpininku\s*paslaug|muitinis\s*iformin|muitinio\s*iformin|zollabfertigung|zollagent|customs\s*clearance|customs\s*broker|brokerage/.test(f);
 	var ship = /frachtrechnung|speditionsrechnung|transportrechnung|freight\s*invoice|shipping\s*invoice|forwarding\s*invoice|transporto\s*paslaug|ekspedijavim|pervezim|krovinio\s*gabenim|freight\s*charges|frachtkosten/.test(f);
-	var proforma = /pro[\s-]?forma|isankstine\s*saskaita|proformarechnung/.test(f);
-	if (decl && (!hasInvoice || (f.split(/saskaita|rechnung|invoice|faktura/).length - 1) <= 2) && !broker) return "customs_declaration";
-	if (broker && hasInvoice) return "cd_invoice";
-	if (ship && hasInvoice) return "shipping_invoice";
-	if (proforma) return "proforma_invoice";
-	if (hasInvoice) return supplierIsOwn ? "sales_invoice" : "purchase_invoice";
+	// a proforma counts only when it is what the document says it is: in the heading, not "paid against proforma PIN-123"
+	var proforma = /pro[\s-]?forma|isankstine\s*saskaita|proformarechnung/.test(head) && !/(against|pagal|per|gegen|auf)\s+(?:a\s+|the\s+)?pro[\s-]?forma/.test(head);
+	var payOrder = /mokejimo\s*nurodymas|payment\s*order|zahlungsauftrag|ueberweisungsauftrag|uberweisungsauftrag/.test(f);
+	var waybill = /waybill|\bawb\b|\btrk#|air\s*waybill|frachtbrief|vaztarastis|ship\s*date|tracking\s*(?:no|nr|number)/.test(f);
+	if (payOrder && !hasInvoice) return { type: "attachment", kind: "payment_order", explicit: true };
+	if (waybill && !hasInvoice && !decl) return { type: "attachment", kind: "waybill", explicit: true };
+	if (decl && (!hasInvoice || (f.split(/saskaita|rechnung|invoice|faktura/).length - 1) <= 2)) return { type: "customs_declaration", explicit: true };
+	if (broker && hasInvoice) return { type: "cd_invoice", explicit: true };
+	if (ship && hasInvoice) return { type: "shipping_invoice", explicit: true };
+	if (proforma) return { type: "proforma_invoice", explicit: true };
+	if (hasInvoice) return { type: supplierIsOwn ? "sales_invoice" : "purchase_invoice", explicit: false };
 	return null;
 }
 
@@ -424,18 +495,33 @@ function textQuality(text) {
 
 /* ------------------------------------------------------------------- parse */
 
+/* pdf.js puts several spaces between text items and spaces around hyphens inside numbers
+   ("PO - 08258", "20260730 - FG394", "15th - September - 2026"); undo that so the patterns see
+   the text as it reads. Done on the ORIGINAL text, before folding, so positions stay aligned. */
+function normalise(text) {
+	return String(text || "")
+		.replace(/[ \t\u00a0]+/g, " ")
+		.replace(/(\w) - (\d)/g, "$1-$2")
+		.replace(/(\d) - (\w)/g, "$1-$2")
+		.replace(/(\d(?:st|nd|rd|th)?) - ([A-Za-z]{3,}) - (\d{4})/g, "$1-$2-$3");
+}
+
+var ATTACH_LABEL = { waybill: "waybill / shipping label", payment_order: "payment order" };
+
 function parse(text, hint) {
-	var orig = String(text || "");
+	var orig = normalise(text);
 	var t = fold(orig);
 	var out = { doc_type: null, document_no: null, document_date: null, payment_due_date: null,
 		supplier_name: null, supplier_reg_number: null, supplier_tax_id: null,
 		customer_name: null, customer_reg_number: null, customer_tax_id: null,
 		issuer_is_ours: false, issuer_entity: "",
-		purchase_order_reference: null, currency: null, total_amount: null,
+		purchase_order_reference: null, related_references: [], attachment_kind: "",
+		needs_file: false, currency: null, total_amount: null,
 		confidence: 0, notes: "", language: detectLanguage(t) };
 	if (!t.trim()) return out;
 
-	out.document_no = findDocumentNo(t, orig);
+	var dt = detectType(t, false);
+	var isForm = dt && (dt.type === "customs_declaration" || dt.type === "attachment");
 
 	var due = labelledDate(t, DUE_LABELS, null);
 	out.payment_due_date = due ? due.iso : null;
@@ -445,6 +531,37 @@ function parse(text, hint) {
 		var all = findDates(t).filter(function (d) { return !due || d.index !== due.at; });
 		if (all.length) out.document_date = all[0].iso;
 	}
+
+	/* forms — customs declarations, courier labels, payment orders — print their captions first and
+	   the values later, so who-is-who and the amounts cannot be read from the text. Read only what is
+	   unambiguous and let the AI read the file. */
+	if (isForm) {
+		out.needs_file = true;
+		out.doc_type = dt.type;
+		if (dt.type === "customs_declaration") {
+			var mrn = findMrn(orig);
+			if (mrn) {
+				out.document_no = mrn.value;
+				var near = findDates(t.slice(mrn.at, mrn.at + 60));
+				if (near.length) out.document_date = near[0].iso;
+			}
+		} else {
+			out.attachment_kind = dt.kind;
+			out.document_date = out.document_date || null;
+		}
+		out.related_references = findReferences(orig, out.document_no);
+		var po0 = findPurchaseOrders(orig);
+		out.purchase_order_reference = po0.length ? po0.join(", ") : null;
+		var found0 = [out.document_no, out.document_date].filter(function (v) { return v !== null; }).length;
+		out.confidence = Math.round((0.15 + 0.1 * found0) * 100) / 100;
+		out.notes = "read by the built-in rules — " +
+			(dt.type === "customs_declaration" ? "a customs declaration" : "a " + ATTACH_LABEL[dt.kind]) +
+			" is a form whose layout the built-in reader cannot follow; only the numbers above were picked out" +
+			(dt.type === "customs_declaration" ? " (the supplier is the customs authority)" : "");
+		return out;
+	}
+
+	out.document_no = findDocumentNo(t, orig);
 
 	var parties = findParties(t, orig, hint);
 	var issuer = parties.issuer, buyer = parties.buyer;
@@ -473,10 +590,19 @@ function parse(text, hint) {
 	}
 
 	var pos = findPurchaseOrders(t);
-	out.purchase_order_reference = pos.length ? pos.join(", ") : null;
+	/* on a sale, a PO printed on it is the CUSTOMER's, not ours */
+	out.purchase_order_reference = (!ours && pos.length) ? pos.join(", ") : null;
+	out.related_references = findReferences(orig, out.document_no);
+	if (ours) pos.forEach(function (p) { if (out.related_references.indexOf(p) < 0) out.related_references.push(p); });
 	out.currency = findCurrency(t);
 	out.total_amount = findTotal(t);
-	out.doc_type = detectType(t, ours) || hint || null;
+
+	/* the employee's own choice of kind wins over a merely generic "invoice" reading */
+	var dt2 = detectType(t, ours);
+	var invoiceLike = { purchase_invoice: 1, proforma_invoice: 1, sales_invoice: 1 };
+	if (dt2 && (dt2.explicit || !hint || !invoiceLike[hint])) out.doc_type = dt2.type;
+	else out.doc_type = hint || (dt2 && dt2.type) || null;
+	if (ours && out.doc_type === "purchase_invoice") out.doc_type = "sales_invoice";
 
 	var found = [out.document_no, out.document_date, ours ? out.customer_name : out.supplier_name, out.total_amount].filter(function (v) { return v !== null; }).length;
 	out.confidence = Math.round((0.2 + 0.15 * found) * 100) / 100;
@@ -492,6 +618,10 @@ function parse(text, hint) {
 			? "issued by our subsidiary IO Integrated Optics GmbH to UAB — recorded as a purchase"
 			: "issued by IO Integrated Optics GmbH but not to Integrated Optics UAB — this is not a UAB document, check it");
 	}
+	if (!ours && /(full\s*advance|advance\s*pay|prepay|pre-pay|isankstin\w*\s*apmoke|vorkasse|vorauszahlung|anzahlung)/i.test(t) &&
+		out.doc_type !== "proforma_invoice") {
+		notes.push("the payment terms say advance payment — this may be a proforma");
+	}
 	if (issuer && buyer && !parties.labelled) notes.push("no seller/buyer labels found — check which company issued it");
 	if (out.payment_due_date === null) notes.push("no payment due date found");
 	out.notes = notes.join("; ");
@@ -502,6 +632,7 @@ return {
 	parse: parse, textQuality: textQuality, setOwn: setOwn, isOwnName: isOwnName, isUabName: isUabName, isOwnCode: isOwnCode,
 	ownEntity: ownEntity,
 	_internals: { fold: fold, parseAmount: parseAmount, findDates: findDates, detectType: detectType,
-		detectLanguage: detectLanguage, findTotal: findTotal, findDocumentNo: findDocumentNo }
+		detectLanguage: detectLanguage, findTotal: findTotal, findDocumentNo: findDocumentNo,
+		findMrn: findMrn, findReferences: findReferences, findPurchaseOrders: findPurchaseOrders, normalise: normalise }
 };
 })();

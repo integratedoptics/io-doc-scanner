@@ -31,6 +31,8 @@ function page(opts) {
 	};
 	w.CS_ACC = { findExactSupplier: function () { return Promise.resolve(null); }, findSupplierMatches: function () { return Promise.resolve([]); },
 		suggestParents: function () { return Promise.resolve([]); } };
+	if (opts.acc) Object.keys(opts.acc).forEach(function (k) { w.CS_ACC[k] = opts.acc[k]; });
+	w.CS_ACC._internals = { normPo: function (v) { var m = /^P\.?O\.?[-\s#:]*(\d[A-Za-z0-9\-]*)$/i.exec(String(v || "").trim()); return m ? "PO-" + m[1] : String(v || "").trim(); } };
 	if (opts.customers) w.CS_ACC.findCustomerMatches = function (n, codes) { calls.cust = { n: n, codes: codes }; return Promise.resolve(opts.customers); };
 	w.CS_ERP = { ready: function () { return ""; } };
 	w.Android = opts.android || {};
@@ -223,8 +225,8 @@ function page(opts) {
 	check("proforma by us: customer auto-picked at 95%", /Customer in ERPNext/.test(p.d.getElementById("d-cust-box").textContent));
 	p.d.getElementById("d-direction").value = "in";
 	p.d.getElementById("d-direction").dispatchEvent(new p.w.Event("change"));
-	check("proforma flipped to received: supplier block back, series PURCHASE-", p.d.getElementById("d-box-supplier").style.display !== "none" &&
-		p.v("d-naming_series") === "PURCHASE-");
+	check("proforma flipped to received: supplier block back, series stays PROFORMA-", p.d.getElementById("d-box-supplier").style.display !== "none" &&
+		p.v("d-naming_series") === "PROFORMA-");
 
 	/* approve a sale: the customer link and series reach accdoc */
 	var sent2 = null;
@@ -244,6 +246,84 @@ function page(opts) {
 	p.d.getElementById("d-customer_name").value = "";
 	p.d.getElementById("btn-doc-approve").click();
 	check("approve sale without customer: refused", /customer name are required/.test(p.d.getElementById("d-stat").textContent), p.d.getElementById("d-stat").textContent);
+
+	/* 13. the nine-document sets (real pdf.js text) */
+	var SETS = path.join(__dirname, "fixtures/sets/");
+	var setText = function (n) { return fs.readFileSync(SETS + n + ".pdfjs.txt", "utf8"); };
+	var asked = null;
+	var accStub = function (po) {
+		return { checkReferences: function (list, si) { var r = { po: {}, salesInvoice: si ? true : null }; list.forEach(function (x) { r.po[x] = po.indexOf(x) >= 0; }); asked = { list: list, si: si }; return Promise.resolve(r); },
+			suggestParents: function (f) { asked = f; return Promise.resolve([{ name: "ACC-0007", document_no: "20260730-FG394", series: "PURCHASE-", supplier: "Flygold", document_date: "2026-08-22", score: 1, exact: true, reasons: ["shared number"] }]); } };
+	};
+	p = page({ pdfText: setText("purchase-commercial-invoice"), acc: accStub(["PO-08258"]) });
+	p.w.onDocPicked({ ok: true, name: "c.pdf", dataUrl: PDF });
+	await settle();
+	check("set: commercial invoice read (supplier with CO.,LIMITED, number, PO)", p.v("d-supplier_name") === "SHENZHEN FLYGOLD CIRCUIT CO.,LIMITED" &&
+		p.v("d-document_no") === "20260730-FG394" && p.v("d-purchase_order_reference") === "PO-08258" && p.v("d-currency") === "USD");
+	check("set: PO found in ERPNext is confirmed, not highlighted", /PO-08258 found/.test(p.d.getElementById("d-po-status").textContent) &&
+		!p.d.getElementById("d-purchase_order_reference").classList.contains("warn"));
+
+	p = page({ pdfText: setText("proforma-supplier-invoice"), acc: accStub(["PO-08258"]) });
+	p.d.getElementById("d-type").value = "proforma_invoice";
+	p.w.onDocPicked({ ok: true, name: "pf.pdf", dataUrl: PDF });
+	await settle();
+	check("set: 'PO:08353' is read as PO-08353", p.v("d-purchase_order_reference") === "PO-08353", p.v("d-purchase_order_reference"));
+	check("set: unknown PO is highlighted for the logistics specialist", p.d.getElementById("d-purchase_order_reference").classList.contains("warn") &&
+		/not a Purchase Order in ERPNext/.test(p.d.getElementById("d-po-status").textContent) && /manually|type it here/.test(p.d.getElementById("d-po-status").textContent));
+	check("set: proforma from a supplier: PROFORMA- series, supplier block", p.v("d-type") === "proforma_invoice" && p.v("d-naming_series") === "PROFORMA-" &&
+		p.v("d-supplier_name") === "SHENZHEN BEST PARTS CO., LTD" && p.v("d-document_no") === "BST260915-B17720" && p.v("d-document_date") === "2026-09-15");
+	check("set: the unmatched PO reaches accdoc, not the PO link", (function () { var f = null; p.w.CS_ACC.createMain = function (x) { f = x; return Promise.resolve({ name: "A", file: { state: "created" }, notes: [] }); };
+		p.d.getElementById("btn-doc-approve").click(); return !!f && f.poUnmatched && f.poUnmatched[0] === "PO-08353" && !(f.poMatched && f.poMatched.length); })());
+
+	p = page({ pdfText: setText("purchase-import-declaration"), acc: accStub(["PO-08258"]) });
+	p.d.getElementById("d-type").value = "customs_declaration";
+	p.w.onDocPicked({ ok: true, name: "cd.pdf", dataUrl: PDF });
+	await settle();
+	check("set: declaration no. is the MRN, supplier is the customs authority", p.v("d-document_no") === "26LTVA100025C7F4R1" &&
+		/Muitinės departamentas prie Lietuvos Respublikos finansų ministerijos/.test(p.v("d-supplier_name")), p.v("d-supplier_name"));
+	check("set: declaration is matched to its purchase through the numbers it cites", asked && asked.references.indexOf("PO-08258") >= 0 &&
+		asked.references.indexOf("20260730-FG394") >= 0 && p.v("d-parent") === "ACC-0007");
+	check("set: a form without a key says only its numbers were read", /form/.test(p.d.getElementById("d-warn").textContent));
+
+	p = page({ key: "k", pdfText: setText("purchase-import-declaration"), acc: accStub([]), ai: function () { return Promise.resolve({ fields: { doc_type: "customs_declaration", document_no: "26LTVA100025C7F4R1",
+		document_date: "2026-08-26", supplier_name: "UAB DHL LIETUVA", related_references: ["PO-08258", "5554865912"] } }); } });
+	p.d.getElementById("d-type").value = "customs_declaration";
+	p.w.onDocPicked({ ok: true, name: "cd.pdf", dataUrl: PDF });
+	await settle();
+	check("set: a form goes to the AI as the file, not the text", p.calls.file.length === 1 && p.calls.text.length === 0);
+	check("set: the AI naming the declarant does not replace the customs authority", /Muitinės departamentas/.test(p.v("d-supplier_name")));
+
+	p = page({ pdfText: setText("purchase-dhl-clearance-invoice"), acc: accStub([]) });
+	p.w.onDocPicked({ ok: true, name: "vs.pdf", dataUrl: PDF });
+	await settle();
+	check("set: DHL clearance invoice is a customs invoice from DHL, found through the MRN", p.v("d-type") === "cd_invoice" && p.v("d-document_no") === "VS396551" &&
+		p.v("d-supplier_name") === "UAB DHL LIETUVA" && p.v("d-parent") === "ACC-0007" && asked.references.indexOf("26LTVA100025C7F4R1") >= 0);
+
+	p = page({ pdfText: setText("sales-fedex-label"), acc: accStub([]) });
+	p.w.onDocPicked({ ok: true, name: "label.pdf", dataUrl: PDF });
+	await settle();
+	check("set: courier label becomes an attachment with only the record picker", p.v("d-type") === "attachment" &&
+		p.d.getElementById("d-box-supplier").style.display === "none" && p.d.getElementById("d-box-customer").style.display === "none" &&
+		p.d.getElementById("d-row-parent").style.display !== "none" && p.d.getElementById("d-row-main-extra").style.display === "none");
+	var att = null;
+	p.w.CS_ACC.attachToParent = function (n, d, f) { att = [n, d, f]; return Promise.resolve({ name: n, file: { state: "created" } }); };
+	p.d.getElementById("btn-doc-approve").click();
+	await settle();
+	check("set: approving an attachment only attaches the file to the chosen record", !!att && att[0] === "ACC-0007" && att[1] === PDF && att[2] === "label.pdf" &&
+		/Attached to/.test(p.d.getElementById("d-stat").textContent), JSON.stringify(att));
+
+	p = page({ pdfText: setText("sales-invoice"), acc: accStub([]), customers: [C("UniNanoTech Co., Ltd.", "UniNanoTech Co., Ltd.", 0.97, false)] });
+	p.w.onDocPicked({ ok: true, name: "s.pdf", dataUrl: PDF });
+	await settle();
+	check("set: sales invoice number goes into the sales invoice reference and is checked", p.v("d-document_no") === "IO26-02602" &&
+		p.v("d-sales_invoice_reference") === "IO26-02602" && /found in ERPNext/.test(p.d.getElementById("d-sales-status").textContent) &&
+		p.v("d-customer_name") === "UniNanoTech Co., Ltd");
+
+	/* payment order: typed values live in form fields, which pdfview now appends to the text */
+	p = page({ pdfText: "Mokėjimo nurodymas Nr. Payment Order No. 2026-09-16 457.00 USD BEST PARTS CO.,LIMITED Payment for purchase order No. PO-08353, BST260915-B17720 and a few more words to make this readable text here", acc: accStub([]) });
+	p.w.onDocPicked({ ok: true, name: "pay.pdf", dataUrl: PDF });
+	await settle();
+	check("set: payment order is an attachment, found through the PO it names", p.v("d-type") === "attachment" && asked && asked.references.indexOf("PO-08353") >= 0);
 
 	console.log(fails ? fails + " FAILED" : "all passed");
 	process.exit(fails ? 1 : 0);

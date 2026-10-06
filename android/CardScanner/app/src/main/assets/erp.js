@@ -371,8 +371,9 @@ function methodUrl(name) {
 	return cfg.url + "/api/method/" + name;
 }
 
-function getList(doctype, filters, fields, limit) {
+function getList(doctype, filters, fields, limit, orderBy) {
 	var q = "?limit_page_length=" + (limit || 0);
+	if (orderBy) q += "&order_by=" + encodeURIComponent(orderBy);
 	if (fields) q += "&fields=" + encodeURIComponent(JSON.stringify(fields));
 	if (filters) q += "&filters=" + encodeURIComponent(JSON.stringify(filters));
 	return login().then(function () {

@@ -27,18 +27,23 @@ function busy(btn, on, label) {
 var DOC_TYPE_LABELS = {
 	purchase_invoice: "Purchase Invoice", proforma_invoice: "Proforma Invoice",
 	sales_invoice: "Sales Invoice", customs_declaration: "Customs Declaration",
-	cd_invoice: "Customs Declaration Invoice", shipping_invoice: "Shipping Invoice"
+	cd_invoice: "Customs Declaration Invoice", shipping_invoice: "Shipping Invoice",
+	attachment: "Attachment"
 };
 var SECTION_FOR = {
 	purchase_invoice: "main", proforma_invoice: "main", sales_invoice: "main",
-	customs_declaration: "cd", cd_invoice: "cdInvoice", shipping_invoice: "shipping"
+	customs_declaration: "cd", cd_invoice: "cdInvoice", shipping_invoice: "shipping", attachment: "attachment"
 };
+/* The supplier on a customs declaration is the customs authority, whoever the exporter or declarant is
+   (it is matched to the closest Supplier in ERPNext). */
+var CUSTOMS_AUTHORITY = "Muitinės departamentas prie Lietuvos Respublikos finansų ministerijos";
 /* Best guess only — the review form leaves this editable so the employee
    can fix it against whatever naming series ERPNext actually has set up. */
 var NAMING_GUESS = { purchase_invoice: "PURCHASE-", proforma_invoice: "PURCHASE-", sales_invoice: "SALES-" };
 var SERIES_GUESSES = ["PURCHASE-", "SALES-", "PROFORMA-"];
 
-var state = { dataUrl: null, fileName: "", supplierLink: "", customerLink: "", kind: "pdf", run: 0 };
+var state = { dataUrl: null, fileName: "", supplierLink: "", customerLink: "", kind: "pdf", run: 0,
+	refs: [], poMatched: null, poUnmatched: null, attachmentKind: "" };
 /* similar customers matched at or above this score (or sharing a registration / tax ID)
    are picked automatically; anything lower is offered for the employee to choose */
 var AUTO_PICK = 0.80;
@@ -58,28 +63,34 @@ function salesMode() {
 function seriesGuess() {
 	var t = $("d-type").value;
 	if (t === "sales_invoice") return "SALES-";
-	if (t === "proforma_invoice") return salesMode() ? "PROFORMA-" : "PURCHASE-";
+	if (t === "proforma_invoice") return "PROFORMA-";
 	return NAMING_GUESS[t] || "PURCHASE-";
 }
 
 function updateTypeUi() {
 	var t = $("d-type").value, sec = SECTION_FOR[t];
+	var att = sec === "attachment";
 	$("d-row-main-extra").style.display = sec === "main" ? "" : "none";
 	var sales = salesMode();
 	$("d-row-direction").style.display = t === "proforma_invoice" ? "" : "none";
 	$("d-row-po").style.display = (sec === "main" && !sales) ? "" : "none";
 	$("d-row-sales").style.display = (sec === "main" && sales) ? "" : "none";
-	$("d-box-supplier").style.display = sales ? "none" : "";
-	$("d-box-customer").style.display = sales ? "" : "none";
+	$("d-box-supplier").style.display = (sales || att) ? "none" : "";
+	$("d-box-customer").style.display = (sales && !att) ? "" : "none";
 	$("d-row-parent").style.display = sec === "main" ? "none" : "";
+	$("d-parent-title").textContent = att ? "File it under this record" : "Parent record";
 	var cur = $("d-naming_series").value;
 	if (sec === "main" && (!cur || SERIES_GUESSES.indexOf(cur) >= 0)) {
 		$("d-naming_series").value = seriesGuess();
 	}
+	if (sec === "cd" && !$("d-supplier_name").value) {
+		$("d-supplier_name").value = CUSTOMS_AUTHORITY;
+		checkSupplier();
+	}
 	if (sec !== "main") loadParentCandidates();
 }
 
-function resetForm() {
+function resetForm(keepStatus) {
 	["document_no", "document_date", "payment_due_date", "naming_series",
 		"purchase_order_reference", "sales_invoice_reference", "supplier_name",
 		"supplier_reg_number", "supplier_tax_id", "customer_name", "customer_reg_number", "customer_tax_id",
@@ -89,16 +100,19 @@ function resetForm() {
 	});
 	$("d-parent-manual").value = "";
 	$("d-direction").value = "in";
+	$("d-po-status").textContent = ""; $("d-sales-status").textContent = "";
+	$("d-purchase_order_reference").classList.remove("warn"); $("d-sales_invoice_reference").classList.remove("warn");
 	$("d-warn").innerHTML = "";
 	$("d-dupe-box").innerHTML = "";
 	$("d-cust-box").innerHTML = "";
 	$("d-issuer-note").textContent = "";
 	$("d-notes").textContent = "";
-	$("d-stat").innerHTML = "";
+	if (!keepStatus) $("d-stat").innerHTML = "";
 	$("d-parent").innerHTML = "";
 	$("d-parent-hint").textContent = "";
 	$("d-file-name").textContent = "";
 	state.dataUrl = null; state.fileName = ""; state.supplierLink = ""; state.customerLink = ""; state.kind = "pdf"; state.run++;
+	state.refs = []; state.poMatched = null; state.poUnmatched = null; state.attachmentKind = "";
 	$("d-preview").style.display = "none"; $("d-preview").removeAttribute("src");
 	$("box-doc-form").style.display = "none";
 }
@@ -117,13 +131,18 @@ function customerCode() {
 
 function readFields() {
 	var sales = salesMode();
+	var poList = poValues();
+	var salesRef = $("d-sales_invoice_reference").value.trim() || (sales ? $("d-document_no").value.trim() : "");
 	return {
 		documentNo: $("d-document_no").value.trim(),
 		documentDate: $("d-document_date").value.trim(),
 		paymentDueDate: $("d-payment_due_date").value.trim(),
 		namingSeries: $("d-naming_series").value.trim(),
-		purchaseOrderReference: $("d-purchase_order_reference").value.trim(),
-		salesInvoiceReference: $("d-sales_invoice_reference").value.trim(),
+		purchaseOrderReference: sales ? "" : poList.join(", "),
+		poMatched: sales ? null : state.poMatched,
+		poUnmatched: sales ? null : state.poUnmatched,
+		salesInvoiceReference: sales ? salesRef : "",
+		references: state.refs.slice(),
 		supplierName: sales ? "" : $("d-supplier_name").value.trim(),
 		supplierCode: sales ? "" : code(),
 		supplierLink: sales ? "" : state.supplierLink,
@@ -165,6 +184,59 @@ function checkSupplier() {
 			});
 		});
 	}).catch(function () { /* a failed duplicate-check shouldn't block manual entry */ });
+}
+
+/* ------------------------------------------------- PO and invoice checks */
+
+function normPo(v) {
+	return window.CS_ACC && window.CS_ACC._internals && window.CS_ACC._internals.normPo
+		? window.CS_ACC._internals.normPo(v) : String(v || "").trim();
+}
+function poValues() {
+	return $("d-purchase_order_reference").value.split(/[,;]/).map(function (v) { return normPo(v); }).filter(Boolean);
+}
+
+/* Is the PO printed on the document a Purchase Order in ERPNext? ("PO:08353" is read as PO-08353.)
+   A PO that cannot be matched is highlighted for the logistics specialist, left out of the record's PO
+   link and noted in its comment — never silently dropped. Same for a sales invoice number on a sale. */
+function checkRefs() {
+	var token = state.run, sales = salesMode();
+	var po = sales ? [] : poValues(), si = sales ? ($("d-sales_invoice_reference").value.trim() || $("d-document_no").value.trim()) : "";
+	var poBox = $("d-purchase_order_reference"), poNote = $("d-po-status"), siBox = $("d-sales_invoice_reference"), siNote = $("d-sales-status");
+	state.poMatched = null; state.poUnmatched = null;
+	poBox.classList.remove("warn"); poNote.textContent = ""; poNote.classList.remove("warntext");
+	siBox.classList.remove("warn"); siNote.textContent = ""; siNote.classList.remove("warntext");
+	if (section() !== "main") return;
+	if (!sales && !po.length) {
+		if (document.getElementById("d-row-po").style.display !== "none") {
+			poBox.classList.add("warn"); poNote.classList.add("warntext");
+			poNote.textContent = "No PO number found on the document — search for the purchase order and enter it.";
+		}
+		return;
+	}
+	if (!window.CS_ACC || !window.CS_ACC.checkReferences || !window.CS_ERP || (window.CS_ERP.ready && window.CS_ERP.ready())) return;
+	window.CS_ACC.checkReferences(po, si).then(function (r) {
+		if (token !== state.run) return;
+		if (po.length) {
+			var ok = po.filter(function (p) { return r.po[p] === true; });
+			var bad = po.filter(function (p) { return r.po[p] === false; });
+			if (bad.length) {
+				state.poMatched = ok; state.poUnmatched = bad;
+				poBox.classList.add("warn"); poNote.classList.add("warntext");
+				poNote.textContent = bad.join(", ") + " is not a Purchase Order in ERPNext — it will not be linked. " +
+					"Search for the right PO and type it here; a note is also left in the record's comment.";
+			} else if (ok.length) {
+				state.poMatched = ok; state.poUnmatched = [];
+				poNote.textContent = ok.join(", ") + " found in ERPNext.";
+			}
+		}
+		if (si && r.salesInvoice === false) {
+			siBox.classList.add("warn"); siNote.classList.add("warntext");
+			siNote.textContent = si + " is not a Sales Invoice in ERPNext — check the number.";
+		} else if (si && r.salesInvoice === true) {
+			siNote.textContent = si + " found in ERPNext.";
+		}
+	}).catch(function () { /* checking is a courtesy; never block the form */ });
 }
 
 /* ------------------------------------------------------- similar customer */
@@ -224,8 +296,8 @@ function loadParentCandidates() {
 	if (!$("d-parent")) return;
 	if (!window.CS_ACC) return;
 	var f = readFields();
-	if (!f.supplierName && !f.documentDate) {
-		$("d-parent").innerHTML = '<option value="">— fill in the supplier and date above first —</option>';
+	if (!f.supplierName && !f.documentDate && !f.references.length && !f.documentNo) {
+		$("d-parent").innerHTML = '<option value="">— fill in a reference number, the supplier or the date first —</option>';
 		return;
 	}
 	$("d-parent").innerHTML = '<option value="">— searching… —</option>';
@@ -236,12 +308,13 @@ function loadParentCandidates() {
 			$("d-parent-hint").textContent = "Enter the exact Accounts Document ID below if you know it.";
 			return;
 		}
-		$("d-parent").innerHTML = '<option value="">— pick the matching purchase —</option>' +
+		$("d-parent").innerHTML = '<option value="">— pick the matching record —</option>' +
 			cands.map(function (c) {
 				return '<option value="' + esc(c.name) + '">' + esc(c.document_no || c.name) + " — " +
-					esc(c.supplier || "") + " — " + esc(c.document_date || "") +
-					" (" + Math.round(c.score * 100) + "%)</option>";
+					esc(c.supplier || "") + " — " + esc(c.document_date || "") + (c.series ? " — " + esc(c.series) : "") +
+					(c.exact ? " (shared number)" : " (" + Math.round(c.score * 100) + "%)") + "</option>";
 			}).join("");
+		if (cands[0].exact) $("d-parent").value = cands[0].name;
 		$("d-parent-hint").textContent = cands[0].reasons && cands[0].reasons.length
 			? "Best match because: " + cands[0].reasons.join(", ") + "." : "";
 	}).catch(function (e) {
@@ -285,7 +358,7 @@ window.onDocPicked = handleDocPicked;
 
 var FIELD_KEYS = ["doc_type", "document_no", "document_date", "payment_due_date", "supplier_name",
 	"supplier_reg_number", "supplier_tax_id", "customer_name", "customer_reg_number", "customer_tax_id",
-	"purchase_order_reference", "currency", "total_amount"];
+	"purchase_order_reference", "currency", "total_amount", "attachment_kind"];
 
 function has(v) { return v !== undefined && v !== null && v !== ""; }
 
@@ -363,6 +436,19 @@ function mergeFields(rules, ai) {
 		out.issuer_is_ours = false;
 	}
 	out.issuer_entity = ours ? ((rules && rules.issuer_entity) || "") : "";
+	/* numbers that tie the document to others: the union of what both readers found */
+	var refs = [];
+	[(rules && rules.related_references) || [], (ai && ai.related_references) || []].forEach(function (list) {
+		(Array.isArray(list) ? list : []).forEach(function (r) {
+			r = String(r || "").trim();
+			if (r && refs.map(function (x) { return x.toUpperCase(); }).indexOf(r.toUpperCase()) < 0) refs.push(r);
+		});
+	});
+	out.related_references = refs;
+	if (out.doc_type === "attachment") {
+		out.supplier_name = null; out.supplier_reg_number = null; out.supplier_tax_id = null;
+		out.customer_name = null; out.customer_reg_number = null; out.customer_tax_id = null;
+	}
 	out.confidence = ai && typeof ai.confidence === "number" ? ai.confidence : (rules ? rules.confidence : 0);
 	out.language = (ai && ai.language) || (rules && rules.language) || "";
 	out.notes = notes.join("; ");
@@ -381,6 +467,9 @@ function fillFromExtraction(x, soft) {
 	}
 	/* a proforma carries its direction in who issued it; the type itself says nothing */
 	$("d-direction").value = x.issuer_is_ours ? "out" : "in";
+	state.refs = Array.isArray(x.related_references) ? x.related_references.slice() : [];
+	state.attachmentKind = x.attachment_kind || "";
+	$("d-supplier_name").value = "";
 	updateTypeUi();
 	$("d-document_no").value = x.document_no || "";
 	$("d-document_date").value = x.document_date || "";
@@ -398,6 +487,14 @@ function fillFromExtraction(x, soft) {
 	if (x.language) notes.push("language: " + ({ lt: "Lithuanian", de: "German", en: "English" }[x.language] || x.language));
 	if (typeof x.confidence === "number") notes.push("confidence: " + Math.round(x.confidence * 100) + "%");
 	if (x.notes) notes.push(x.notes);
+	if (section() === "cd") {                                  // the customs authority, whoever declared the goods
+		$("d-supplier_name").value = CUSTOMS_AUTHORITY;
+		$("d-supplier_reg_number").value = ""; $("d-supplier_tax_id").value = "";
+	}
+	if (salesMode() && !$("d-sales_invoice_reference").value) $("d-sales_invoice_reference").value = x.document_no || "";
+	if (section() === "attachment" && state.attachmentKind) {
+		notes.push({ waybill: "waybill / label", payment_order: "payment order", other: "supporting paper" }[state.attachmentKind] || "attachment");
+	}
 	$("d-notes").textContent = notes.join(" — ");
 	$("d-issuer-note").textContent = x.issuer_is_ours
 		? "Issued by Integrated Optics UAB" +
@@ -405,6 +502,7 @@ function fillFromExtraction(x, soft) {
 		: "";
 	checkSupplier();
 	checkCustomer();
+	checkRefs();
 	if (section() !== "main") loadParentCandidates();
 }
 
@@ -438,10 +536,15 @@ function runExtraction() {
 		var good = window.CS_RULES.textQuality(r.text).ok;
 		var rules = good ? window.CS_RULES.parse(r.text, hint) : null;
 		if (rules) fillFromExtraction(rules, true);
-		var visual = !good;                        // photo, scan, or unreadable text layer
+		/* photo, scan, unreadable text layer — or a FORM (customs declaration, courier label, payment order),
+		   whose text comes out with all the captions first and the values apart: the AI reads those as a picture */
+		var visual = !good || !!(rules && rules.needs_file);
 
 		if (!key) {
-			if (rules) {
+			if (rules && rules.needs_file) {
+				warn(note("This is a form (customs declaration, label or payment order): only its numbers could be read here. " +
+					"Add an Anthropic key under Settings to have the AI read the whole form, or fill in the fields by hand.", "var(--violet)"));
+			} else if (rules) {
 				warn(note("Filled in by the built-in reader (English, Lithuanian, German) — check every field. " +
 					"Add an Anthropic key under Settings for the AI model to read it as well.", "var(--violet)"));
 			} else if (state.kind === "image") {
@@ -476,6 +579,34 @@ function approve() {
 	var t = $("d-type").value, sec = SECTION_FOR[t];
 	var f = readFields();
 	var sales = salesMode();
+	if (sec === "attachment") {
+		if (!state.dataUrl) {
+			$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Choose, photograph or scan the document first.</p>';
+			return;
+		}
+		var bad0 = window.CS_ERP.ready();
+		if (bad0) { $("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">' + esc(bad0) + "</p>"; return; }
+		var parent0 = $("d-parent-manual").value.trim() || $("d-parent").value;
+		if (!parent0) {
+			$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Pick or enter the record to file this under first.</p>';
+			return;
+		}
+		busy($("btn-doc-approve"), true, "Sending…");
+		$("d-stat").innerHTML = "";
+		window.CS_ACC.attachToParent(parent0, state.dataUrl, state.fileName).then(function (res) {
+			busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
+			var ok = res.file && res.file.state === "created";
+			$("d-stat").innerHTML = ok
+				? '<p class="hint" style="color:#1f8a4c">Attached to <b>' + esc(res.name) + ".</b></p>"
+				: '<p class="hint" style="color:var(--err)">The file could not be attached: ' +
+					esc((res.file && res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "unknown error") + "</p>";
+			if (ok) resetForm(true);
+		}).catch(function (e) {
+			busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
+			$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">' + esc(e.message || String(e)) + "</p>";
+		});
+		return;
+	}
 	if (!f.documentNo || !f.documentDate || !(sales ? f.customerName : f.supplierName)) {
 		$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Document no., date and ' +
 			(sales ? "customer" : "supplier") + " name are required.</p>";
@@ -517,7 +648,7 @@ function approve() {
 			lines.push('<p class="hint">' + esc(n.message) + "</p>");
 		});
 		$("d-stat").innerHTML = lines.join("");
-		resetForm();
+		resetForm(true);
 	}).catch(function (e) {
 		busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
 		var msg = (e.errors && e.errors.length && e.errors.map(function (x) { return x.message; }).join(" ")) ||
@@ -587,9 +718,12 @@ function scanDuplicateSuppliers() {
 /* ------------------------------------------------------------------- wiring */
 
 function init() {
-	$("d-type").addEventListener("change", function () { updateTypeUi(); checkSupplier(); checkCustomer(); });
-	$("d-direction").addEventListener("change", function () { updateTypeUi(); checkSupplier(); checkCustomer(); });
+	$("d-type").addEventListener("change", function () { updateTypeUi(); checkSupplier(); checkCustomer(); checkRefs(); });
+	$("d-direction").addEventListener("change", function () { updateTypeUi(); checkSupplier(); checkCustomer(); checkRefs(); });
 	$("d-customer_name").addEventListener("blur", function () { checkCustomer(); });
+	$("d-purchase_order_reference").addEventListener("blur", function () { checkRefs(); });
+	$("d-sales_invoice_reference").addEventListener("blur", function () { checkRefs(); });
+	$("d-document_no").addEventListener("blur", function () { if (salesMode()) checkRefs(); });
 	$("d-customer_reg_number").addEventListener("blur", function () { checkCustomer(); });
 	$("d-customer_tax_id").addEventListener("blur", function () { checkCustomer(); });
 	$("d-supplier_name").addEventListener("blur", checkSupplier);
@@ -624,7 +758,7 @@ function init() {
 		((window.Android && typeof window.Android.captureDocument === "function") ||
 			(window.CS_CAMERA && window.CS_CAMERA.available())) ? "" : "none";
 	$("btn-doc-extract").onclick = function () { if (state.dataUrl) runExtraction(); };
-	$("btn-doc-cancel").onclick = resetForm;
+	$("btn-doc-cancel").onclick = function () { resetForm(); };
 	$("btn-doc-approve").onclick = approve;
 	$("btn-dupe-scan").onclick = scanDuplicateSuppliers;
 

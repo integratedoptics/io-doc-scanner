@@ -27,7 +27,7 @@ var ANTHROPIC_VERSION = "2023-06-01";
 var MAX_B64 = 26 * 1000 * 1000;   // the API's request limit is 32 MB; leave room for the prompt
 
 var DOC_TYPES = ["purchase_invoice", "proforma_invoice", "sales_invoice",
-	"customs_declaration", "cd_invoice", "shipping_invoice"];
+	"customs_declaration", "cd_invoice", "shipping_invoice", "attachment"];
 
 var SCHEMA_PROMPT =
 "You are reading an accounts document for Integrated Optics UAB (Vilnius, Lithuania; company code 302833442; " +
@@ -47,7 +47,11 @@ var SCHEMA_PROMPT =
 "  \"customer_reg_number\": the buyer's registration number, or null,\n" +
 "  \"customer_tax_id\": the buyer's VAT / tax ID, with country prefix, or null,\n" +
 "  \"issuer_is_ours\": true only if the document was ISSUED by Integrated Optics UAB (not the GmbH), else false,\n" +
-"  \"purchase_order_reference\": PO number(s) the document refers to, or null,\n" +
+"  \"purchase_order_reference\": OUR purchase order number(s) the document refers to, normalised like PO-08353, or null,\n" +
+"  \"related_references\": a JSON array of every number that ties this document to others: our PO numbers, sales order / " +
+"proforma numbers (SO-…, PIN-…), the customer's own PO, invoice numbers it cites, the customs declaration MRN, waybill / " +
+"tracking numbers — as printed, without this document's own number (empty array if none),\n" +
+"  \"attachment_kind\": for doc_type \"attachment\" only: \"waybill\", \"payment_order\" or \"other\"; else \"\",\n" +
 "  \"currency\": ISO 4217 code, or null,\n" +
 "  \"total_amount\": the gross total payable as a plain JSON number, or null,\n" +
 "  \"language\": \"en\", \"lt\", \"de\" or \"other\" — the main language of the document,\n" +
@@ -57,16 +61,24 @@ var SCHEMA_PROMPT =
 "WHAT KIND OF DOCUMENT (decide from its own heading and content; the filename is irrelevant):\n" +
 "- purchase_invoice: an invoice where WE are the buyer. Lithuanian \"PVM sąskaita faktūra\", \"Sąskaita faktūra\", " +
 "\"Sąskaita\"; German \"Rechnung\", \"Eingangsrechnung\"; English \"Invoice\", \"Tax invoice\", \"Commercial invoice\".\n" +
-"- proforma_invoice: \"Išankstinė sąskaita (faktūra)\", \"Proforma sąskaita\", \"Proformarechnung\", " +
+"- proforma_invoice: headed \"Išankstinė sąskaita (faktūra)\", \"Proforma sąskaita\", \"Proformarechnung\", " +
 "\"Pro-forma-Rechnung\", \"Proforma invoice\".\n" +
 "- sales_invoice: an invoice that WE issue — i.e. the SELLER is Integrated Optics UAB. This includes UAB billing its " +
 "subsidiary IO Integrated Optics GmbH (intercompany): the customer is then the GmbH. An invoice FROM the GmbH TO the UAB " +
 "is a purchase_invoice with the GmbH as supplier.\n" +
 "- customs_declaration: \"Muitinės deklaracija\", \"Importo / Eksporto deklaracija\", \"Bendrasis administracinis " +
 "dokumentas (BAD)\", \"Zollanmeldung\", \"Einfuhranmeldung\", \"Ausfuhranmeldung\", \"Customs declaration\", " +
-"\"Single Administrative Document (SAD)\". Its document_no is the MRN / registration number.\n" +
+"\"Single Administrative Document (SAD)\". Its document_no is the MRN (18 characters, " +
+"like 26LTVA100025C7F4R1). These are FORMS with numbered boxes: take values by box number (2 exporter, 8 consignee, " +
+"14 declarant, 22 currency and invoice value, 40 / 44 attached documents — a code N380 is an invoice number, N740 / N760 " +
+"a waybill number — and the PO in box 44). Leave supplier_* null on a customs declaration (the app fills in the customs " +
+"authority) and total_amount null.\n" +
 "- cd_invoice: an invoice FROM a customs broker or agent for clearing a declaration: \"Muitinės tarpininko / " +
 "muitinės paslaugų sąskaita\", \"Zollabfertigungsrechnung\", \"Customs clearance / broker invoice\".\n" +
+"- attachment: a supporting paper that is NOT an invoice or a declaration and is only filed with the record: a waybill or " +
+"courier label (DHL / FedEx / UPS / TNT, \"Važtaraštis\", \"Frachtbrief\", CMR), or a bank payment order / transfer " +
+"confirmation (\"Mokėjimo nurodymas\", \"Payment Order\", \"Zahlungsauftrag\"). Read its date, amount and currency, " +
+"and its references: the PO and invoice numbers in the payment details, the tracking number, the customer's PO.\n" +
 "- shipping_invoice: an invoice from a carrier or forwarder: \"Transporto / vežimo / ekspedijavimo paslaugų " +
 "sąskaita\", \"Frachtrechnung\", \"Speditionsrechnung\", \"Transportrechnung\", \"Freight / forwarding / shipping " +
 "invoice\". (A CMR, \"Krovinio važtaraštis\", \"Frachtbrief\" or waybill is not an invoice — pick the closest kind " +
@@ -101,12 +113,15 @@ var SCHEMA_PROMPT =
 "if there is no USt-IdNr.) | \"VAT No./ID\", \"Tax ID\". Keep the country prefix (LT258168314).\n" +
 "- purchase_order_reference: \"Užsakymo Nr.\" | \"Bestellnummer\", \"Ihre Bestellung\", \"Auftragsnummer\" | " +
 "\"PO number\", \"Your order\". Several POs (also one per line item): list each once, in order, joined with \", \". " +
-"Ours look like PO-07808.\n" +
+"Ours look like PO-07808: normalise \"PO:08353\", \"PO 08353\", \"P.O. 08353\" or a bare number after \"PO\" to " +
+"\"PO-08353\". An invoice number printed together with a PO (\"20260730-FG394 PO-08258\") is the number only: " +
+"\"20260730-FG394\". On a document WE issue, a PO printed on it is the CUSTOMER's: leave purchase_order_reference null " +
+"and list it in related_references.\n" +
 "- total_amount: the GROSS amount payable, including VAT: \"Suma, EUR\", \"Iš viso\", \"Viso mokėti\", \"Mokėtina " +
 "suma\" | \"Gesamtbetrag\", \"Rechnungsbetrag\", \"Brutto\", \"Zu zahlen\" | \"Total\", \"Amount due\", \"Grand total\". " +
 "NOT the net or subtotal (\"Viso, be PVM\", \"Netto\", \"Zwischensumme\", \"Subtotal\") and not the VAT line.\n\n" +
 "FORMATS: Dates are day-first. \"22.04.2026\" is 2026-04-22; Lithuanian \"2026 m. balandžio 22 d.\" is 2026-04-22; " +
-"German \"22. April 2026\". Lithuanian months: sausio, vasario, kovo, balandžio, gegužės, birželio, liepos, " +
+"German \"22. April 2026\"; also \"15th-September-2026\", \"2026/8/22\" and \"23SEP26\". Lithuanian months: sausio, vasario, kovo, balandžio, gegužės, birželio, liepos, " +
 "rugpjūčio, rugsėjo, spalio, lapkričio, gruodžio. German months: Januar, Februar, März, April, Mai, Juni, Juli, " +
 "August, September, Oktober, November, Dezember. Amounts: \"1.234,56\" and \"1 234,56\" (German/Lithuanian style) " +
 "both mean 1234.56 — return a JSON number with a dot as the decimal separator and no thousands separators.\n\n" +
