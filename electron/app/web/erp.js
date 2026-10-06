@@ -669,6 +669,19 @@ function testConnection() {
 				e.errors = errs;
 				throw e;
 			}
+			/* get_logged_user answers "Guest" with a 200 when ERPNext did not recognise
+			   the credentials at all (header missing/mangled, or key+secret not
+			   matching a user) — which later shows up as a confusing permission
+			   error on whatever is read first. Say so here instead. */
+			var who = "";
+			try { who = (JSON.parse(r.body || "{}").message || ""); } catch (x) { who = ""; }
+			if (cfg.mode === "token" && String(who).toLowerCase() === "guest") {
+				var ge = new Error("ERPNext did not recognise the API key and secret — it treats this " +
+					"connection as not signed in (Guest). Re-copy both from ERPNext (User \u2192 API Access), " +
+					"check the address has no typos, and make sure the key belongs to an enabled user.");
+				ge.errors = [{ field: "", message: ge.message }];
+				throw ge;
+			}
 			/* any other answer (even a 404 from an unusual setup) is not proof the
 			   credentials are wrong — carry on and let the real calls speak */
 			return refreshVocabulary();
