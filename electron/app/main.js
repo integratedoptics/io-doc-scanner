@@ -18,6 +18,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const { URL } = require("url");
+const httpClient = require("./http");
 
 const WEB_DIR = path.join(__dirname, "web");
 const WEB_ENTRY = path.join(WEB_DIR, "index.html");
@@ -89,26 +90,18 @@ ipcMain.handle("pick-file", async (event, opts) => {
    real native HTTP bridges on Android/iOS sidestep by using a native HTTP
    client instead of the WebView's own networking. */
 ipcMain.handle("http-fetch", async (event, req) => {
-	const timeoutMs = ((req && req.timeout) || 30) * 1000;
-	const ctrl = new AbortController();
-	const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-	try {
-		const method = (req && req.method) || "GET";
-		const isBodyless = method === "GET" || method === "HEAD";
-		const r = await fetch(req.url, {
-			method: method,
-			headers: (req && req.headers) || {},
-			body: isBodyless ? undefined : (req.body || undefined),
-			signal: ctrl.signal
-		});
-		const text = await r.text();
-		return { ok: true, status: r.status, body: text };
-	} catch (e) {
-		const msg = e && e.name === "AbortError"
-			? "The server did not answer within " + Math.round(timeoutMs / 1000) + " s."
-			: (e && e.message) || String(e);
-		return { ok: false, error: msg };
-	} finally {
-		clearTimeout(timer);
-	}
+	const r = await httpClient.request({
+		method: (req && req.method) || "GET",
+		url: req.url,
+		headers: (req && req.headers) || {},
+		body: req && req.body,
+		timeoutMs: ((req && req.timeout) || 30) * 1000
+	});
+	if (r.hops && r.hops.length) console.log("[http] redirects:", r.hops.join(" | "));
+	// one line per request, never the credentials themselves
+	const hasAuth = Object.keys((req && req.headers) || {}).some((k) => /^authorization$/i.test(k));
+	console.log("[http]", (req && req.method) || "GET", req.url, "auth:" + (hasAuth ? "yes" : "no"),
+		"->", r.ok ? r.status : "ERR " + r.error,
+		r.ok && r.status >= 400 ? String(r.body).slice(0, 200).replace(/\s+/g, " ") : "");
+	return r;
 });
