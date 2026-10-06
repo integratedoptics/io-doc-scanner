@@ -307,6 +307,15 @@ function culpritField(msg, doc) {
 
 function toErrors(status, bodyText, what) {
 	var e = readError(bodyText);
+	/* A 403 PermissionError means the key/secret WERE accepted — the user they
+	   belong to just has no rights on this doctype. Telling someone to "check
+	   the credentials" there sends them hunting for a typo that isn't there. */
+	if (status === 403 && e.type === "PermissionError") {
+		var which = e.msgs.length && e.msgs[0] !== what ? " (" + e.msgs[0] + ")" : "";
+		return [{ field: "", message: "ERPNext accepted the login, but this user is not allowed to " +
+			"access " + what + which + ". Give the API user a role that has permission on it " +
+			"(ERPNext: User \u2192 Roles; Role Permissions Manager shows which roles can)." }];
+	}
 	if (status === 401 || status === 403) {
 		var why = e.msgs.length ? " " + e.msgs[0] : "";
 		return [{ field: "", message: "ERPNext refused the credentials (" + status +
@@ -627,15 +636,22 @@ function clean(doctype, doc, notes) {
 /* Pulls the real Territory and Country lists so the standardising works against
    what the instance actually holds rather than a list frozen at build time. */
 function refreshVocabulary() {
+	var unreadable = [];
+	function soft(doctype, fields) {
+		return getList(doctype, null, fields, 0).catch(function (err) {
+			if (err && err.status === 403) unreadable.push(doctype);
+			return [];
+		});
+	}
 	return Promise.all([
-		getList("Territory", null, ["name", "is_group"], 0).catch(function () { return []; }),
-		getList("Country", null, ["name"], 0).catch(function () { return []; })
+		soft("Territory", ["name", "is_group"]),
+		soft("Country", ["name"])
 	]).then(function (r) {
 		var terr = r[0].filter(function (t) { return !t.is_group; })
 			.map(function (t) { return t.name; });
 		var ctry = r[1].map(function (c) { return c.name; });
 		N.setLive(terr, ctry);
-		return { territories: terr.length, countries: ctry.length };
+		return { territories: terr.length, countries: ctry.length, unreadable: unreadable };
 	});
 }
 
@@ -643,8 +659,20 @@ function testConnection() {
 	var bad = ready();
 	if (bad) return Promise.reject(new Error(bad));
 	return login()
-		.then(function () { return getList("Territory", null, ["name"], 1); })
-		.then(function () { return refreshVocabulary(); });
+		.then(function () {
+			return request("GET", methodUrl("frappe.auth.get_logged_user"), authHeaders(false), "", 30);
+		})
+		.then(function (r) {
+			if (r.status === 401 || r.status === 403) {
+				var errs = toErrors(r.status, r.body, "login");
+				var e = new Error(errs[0].message);
+				e.errors = errs;
+				throw e;
+			}
+			/* any other answer (even a 404 from an unusual setup) is not proof the
+			   credentials are wrong — carry on and let the real calls speak */
+			return refreshVocabulary();
+		});
 }
 
 /* ------------------------------------------------------------- duplicates */

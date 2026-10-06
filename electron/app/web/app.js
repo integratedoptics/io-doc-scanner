@@ -1288,9 +1288,17 @@ function testErp() {
 	ERP.testConnection().then(function (v) {
 		busy($("btn-erp-test"), false, "Test the connection");
 		paintCountryList();
-		$("erp-test").innerHTML = '<p class="hint" style="color:#1f8a4c">Connected. ' +
+		var okHtml = '<p class="hint" style="color:#1f8a4c">Connected — the credentials were accepted. ' +
 			v.territories + " territories and " + v.countries +
 			" countries read from your instance — country names will now be matched against those.</p>";
+		if (v.unreadable && v.unreadable.length) {
+			okHtml = '<p class="hint" style="color:#1f8a4c">Connected — the credentials were accepted.</p>' +
+				'<p class="hint" style="color:var(--violet)">This user is not allowed to read ' +
+				esc(v.unreadable.join(" and ")) + ", so country/territory names are matched against the " +
+				"built-in lists instead. Records that need those lists may be refused when sent — give the " +
+				"API user a role with read access to them (ERPNext: User \u2192 Roles).</p>";
+		}
+		$("erp-test").innerHTML = okHtml;
 		toast("ERPNext connection works.", "good");
 	}).catch(function (e) {
 		busy($("btn-erp-test"), false, "Test the connection");
