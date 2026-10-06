@@ -178,6 +178,22 @@ function page(opts) {
 	check("intercompany: sales invoice to the GmbH", p.v("d-type") === "sales_invoice" && p.v("d-customer_name") === "IO Integrated Optics GmbH", p.v("d-customer_name"));
 	check("intercompany: flagged", /intercompany/.test(p.d.getElementById("d-issuer-note").textContent));
 
+	/* GmbH bills UAB: a purchase from the GmbH, with the GmbH's own codes; the AI naming the GmbH is NOT "our company" */
+	var G2U = "Rechnung Rechnungsnummer: 2026-001 Rechnungsdatum: 03.06.2026 Verkäufer: IO Integrated Optics GmbH Hauptstraße 1 " +
+		"Handelsregister: HRB 37938 USt-IdNr.: DE355412240 Rechnungsempfänger: Integrated Optics UAB Įmonės kodas: 302833442 Gesamtbetrag: 1.190,00 EUR";
+	p = page({ pdfText: G2U });
+	p.w.onDocPicked({ ok: true, name: "g.pdf", dataUrl: PDF });
+	await settle();
+	check("GmbH->UAB: purchase invoice from the GmbH", p.v("d-type") === "purchase_invoice" && p.v("d-supplier_name") === "IO Integrated Optics GmbH" &&
+		p.v("d-supplier_tax_id") === "DE355412240" && p.v("d-supplier_reg_number") === "HRB 37938", p.v("d-type") + "/" + p.v("d-supplier_name"));
+	check("GmbH->UAB: supplier block shown, series PURCHASE-", p.d.getElementById("d-box-supplier").style.display !== "none" && p.v("d-naming_series") === "PURCHASE-");
+	p = page({ key: "k", pdfText: G2U, ai: function () { return Promise.resolve({ fields: { doc_type: "purchase_invoice", document_no: "2026-001",
+		supplier_name: "IO Integrated Optics GmbH", supplier_tax_id: "DE355412240", customer_name: "Integrated Optics UAB", issuer_is_ours: false } }); } });
+	p.w.onDocPicked({ ok: true, name: "g.pdf", dataUrl: PDF });
+	await settle();
+	check("GmbH->UAB with AI: the GmbH stays the supplier", p.v("d-supplier_name") === "IO Integrated Optics GmbH" && p.v("d-supplier_tax_id") === "DE355412240" &&
+		!/our own company/.test(p.d.getElementById("d-notes").textContent), p.v("d-supplier_name") + " | " + p.d.getElementById("d-notes").textContent);
+
 	/* AI mixes it up: names the GmbH as both issuer and customer, supplier slot holds the buyer */
 	p = page({ key: "k", pdfText: SALE, customers: [], ai: function () { return Promise.resolve({ fields: { doc_type: "purchase_invoice",
 		document_no: "IO1001", document_date: "2026-06-02", supplier_name: "Photon Systems GmbH", supplier_tax_id: "DE811234567",
@@ -197,7 +213,7 @@ function page(opts) {
 		p.v("d-customer_name") === "" && p.v("d-supplier_name") === "ESEMDA, UAB");
 
 	/* proforma: direction follows the issuer, and can be flipped by hand */
-	var PF = "Proforma invoice No. PF-9 Date: 2026-07-01 Seller: IO Integrated Optics GmbH Buyer: Foo Oy VAT: FI12345678 Total: EUR 99.00";
+	var PF = "Proforma invoice No. PF-9 Date: 2026-07-01 Seller: Integrated Optics UAB Buyer: Foo Oy VAT: FI12345678 Total: EUR 99.00";
 	p = page({ pdfText: PF, customers: [C("Foo Oy", "Foo Oy", 0.95)] });
 	p.w.onDocPicked({ ok: true, name: "pf.pdf", dataUrl: PDF });
 	await settle();

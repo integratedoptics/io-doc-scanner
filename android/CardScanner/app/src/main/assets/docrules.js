@@ -16,12 +16,13 @@
 window.CS_RULES = (function () {
 "use strict";
 
-/* Our own companies: Integrated Optics UAB and its German subsidiary IO Integrated
-   Optics GmbH (both contain "integrated optics"). Never the supplier on a purchase
-   invoice, and their registration/VAT codes must never be mistaken for another
-   company's. A document ISSUED by one of them is a sales document; the other party
-   printed on it is the customer. Add the GmbH's USt-IdNr./HRB to `codes` (or call
-   setOwn) once known — name matching works without them. */
+/* Our company: Integrated Optics UAB (codes below). These documents are kept for the accounts
+   of the UAB only. Its German subsidiary IO Integrated Optics GmbH (HRB 37938, USt-IdNr.
+   DE355412240) is an ordinary counterparty: a supplier when it bills the UAB (a purchase), a
+   customer when the UAB bills it (a sale) — its codes are NOT in `codes`, so they are read like
+   any other company's. A document ISSUED by the UAB is a sales document and the other party
+   printed on it is the customer; the UAB is never the supplier and its codes are never another
+   company's. Both companies contain "integrated optics", which is how names are recognised. */
 var OWN = { names: ["integrated optics"], codes: ["302833442", "LT100007179012"] };
 function setOwn(o) {
 	if (o && o.names) OWN.names = o.names.map(function (n) { return fold(n).toLowerCase(); });
@@ -159,6 +160,10 @@ function isOwnName(n) {
 	var f = fold(n).toLowerCase();
 	return OWN.names.some(function (o) { return f.indexOf(o) >= 0; });
 }
+/* These documents are kept for the accounts of Integrated Optics UAB only. The German
+   subsidiary is an ordinary counterparty: a supplier when it bills UAB, a customer when UAB
+   bills it. So "ours" means UAB (a name with no legal form counts as UAB). */
+function isUabName(n) { return isOwnName(n) && ownEntity(n) !== "GmbH"; }
 
 /* ------------------------------------------------------------ document no. */
 
@@ -227,8 +232,8 @@ function companyCandidates(t, orig) {
 	});
 }
 
-var BUYER_CTX = /(pirkejas|gavejas|kunde|kaufer|rechnungsempfanger|bill\s*to|buyer|customer|sold\s*to|ship\s*to|deliver\s*to|klientas|auftraggeber|empfanger)[^a-z0-9]{0,3}$/i;
-var SELLER_CTX = /(pardavejas|tiekejas|israse|issued\s*by|verkaufer|lieferant|rechnungssteller|aussteller|seller|supplier|vendor|from)[^a-z0-9]{0,3}$/i;
+var BUYER_CTX = /\b(pirkejas|gavejas|kunde|kaufer|rechnungsempfanger|bill\s*to|buyer|customer|sold\s*to|ship\s*to|deliver\s*to|klientas|auftraggeber|empfanger)[^a-z0-9]{0,3}$/i;
+var SELLER_CTX = /\b(pardavejas|tiekejas|israse|issued\s*by|verkaufer|lieferant|rechnungssteller|aussteller|seller|supplier|vendor|from)[^a-z0-9]{0,3}$/i;
 
 /* "UAB" / "GmbH" for one of our own companies, "" otherwise */
 function ownEntity(name) {
@@ -248,7 +253,7 @@ function findParties(t, orig, hint) {
 		var ctx = t.slice(Math.max(0, c.at - 40), c.at);
 		c.buyer = BUYER_CTX.test(ctx);
 		c.seller = SELLER_CTX.test(ctx);
-		c.own = isOwnName(c.name);
+		c.own = isUabName(c.name);
 		c.key = fold(c.name).toLowerCase().replace(/[^a-z0-9]/g, "");
 	});
 	var buyer = cands.filter(function (c) { return c.buyer; })[0] || null;
@@ -445,7 +450,7 @@ function parse(text, hint) {
 	var issuer = parties.issuer, buyer = parties.buyer;
 	var ours = !!(issuer && issuer.own);
 	out.issuer_is_ours = ours;
-	out.issuer_entity = ours ? ownEntity(issuer.name) : "";
+	out.issuer_entity = ours ? "UAB" : "";
 	var codes = findCodes(t);
 	var both = [issuer, buyer];
 
@@ -478,10 +483,15 @@ function parse(text, hint) {
 	var notes = ["read by the built-in rules" + (out.language ? " (" + LANG_NAME[out.language] + ")" : "") +
 		" — please check every field"];
 	if (ours) {
-		notes.push("issued by " + (issuer.name || "our company") + " — sales document" +
-			(buyer && isOwnName(buyer.name) ? " (between our own companies — use Purchase Invoice instead if this is the receiving company's purchase)" : ""));
+		notes.push("issued by Integrated Optics UAB — sales document" +
+			(buyer && ownEntity(buyer.name) === "GmbH" ? " (a sale to our subsidiary IO Integrated Optics GmbH — between our own companies)" : ""));
 		if (!out.customer_name) notes.push("customer not recognised");
 	} else if (!out.supplier_name) notes.push("supplier not recognised");
+	else if (ownEntity(out.supplier_name) === "GmbH") {
+		notes.push(buyer && isUabName(buyer.name)
+			? "issued by our subsidiary IO Integrated Optics GmbH to UAB — recorded as a purchase"
+			: "issued by IO Integrated Optics GmbH but not to Integrated Optics UAB — this is not a UAB document, check it");
+	}
 	if (issuer && buyer && !parties.labelled) notes.push("no seller/buyer labels found — check which company issued it");
 	if (out.payment_due_date === null) notes.push("no payment due date found");
 	out.notes = notes.join("; ");
@@ -489,7 +499,7 @@ function parse(text, hint) {
 }
 
 return {
-	parse: parse, textQuality: textQuality, setOwn: setOwn, isOwnName: isOwnName, isOwnCode: isOwnCode,
+	parse: parse, textQuality: textQuality, setOwn: setOwn, isOwnName: isOwnName, isUabName: isUabName, isOwnCode: isOwnCode,
 	ownEntity: ownEntity,
 	_internals: { fold: fold, parseAmount: parseAmount, findDates: findDates, detectType: detectType,
 		detectLanguage: detectLanguage, findTotal: findTotal, findDocumentNo: findDocumentNo }

@@ -303,11 +303,11 @@ function mergeFields(rules, ai) {
 	if (ai && has(ai.notes)) notes.push(ai.notes);
 	var rulesOurs = !!(rules && rules.issuer_is_ours);
 	var ours = ai && typeof ai.issuer_is_ours === "boolean" ? ai.issuer_is_ours : rulesOurs;
-	if (!ours && has(out.supplier_name) && R.isOwnName(out.supplier_name) && rulesOurs) ours = true;
+	if (!ours && has(out.supplier_name) && R.isUabName(out.supplier_name) && rulesOurs) ours = true;
 
 	if (ours) {
 		/* we are the issuer: the customer is the other party */
-		var issuerEntity = (rules && rules.issuer_entity) || R.ownEntity(out.supplier_name || "");
+		var issuerEntity = "UAB";
 		var cust = {
 			name: has(ai && ai.customer_name) ? ai.customer_name : null,
 			reg: ai && ai.customer_reg_number, tax: ai && ai.customer_tax_id
@@ -318,7 +318,7 @@ function mergeFields(rules, ai) {
 				out.customer_name = rules.customer_name;
 				out.customer_reg_number = rules.customer_reg_number;
 				out.customer_tax_id = rules.customer_tax_id;
-			} else if (!has(cust.name) && has(ai && ai.supplier_name) && !R.isOwnName(ai.supplier_name)) {
+			} else if (!has(cust.name) && has(ai && ai.supplier_name) && !R.isUabName(ai.supplier_name)) {
 				/* the AI put the other party in the supplier slot */
 				out.customer_name = ai.supplier_name;
 				out.customer_reg_number = ai.supplier_reg_number || null;
@@ -341,12 +341,12 @@ function mergeFields(rules, ai) {
 	} else {
 		out.customer_name = null; out.customer_reg_number = null; out.customer_tax_id = null;
 		if (out.doc_type === "sales_invoice") out.doc_type = "purchase_invoice";
-		if (has(out.supplier_name) && R.isOwnName(out.supplier_name)) {
-			if (rules && has(rules.supplier_name) && !R.isOwnName(rules.supplier_name)) {
+		if (has(out.supplier_name) && R.isUabName(out.supplier_name)) {
+			if (rules && has(rules.supplier_name) && !R.isUabName(rules.supplier_name)) {
 				out.supplier_name = rules.supplier_name;
 				out.supplier_reg_number = rules.supplier_reg_number;
 				out.supplier_tax_id = rules.supplier_tax_id;
-				notes.push("the AI named our own company as supplier — replaced by the seller found by the built-in reader");
+				notes.push("the AI named our own company (UAB) as supplier — replaced by the seller found by the built-in reader");
 			} else {
 				out.supplier_name = null; out.supplier_reg_number = null; out.supplier_tax_id = null;
 				notes.push("the document names only our own company — enter the supplier by hand");
@@ -400,9 +400,8 @@ function fillFromExtraction(x, soft) {
 	if (x.notes) notes.push(x.notes);
 	$("d-notes").textContent = notes.join(" — ");
 	$("d-issuer-note").textContent = x.issuer_is_ours
-		? "Issued by " + (x.issuer_entity === "GmbH" ? "IO Integrated Optics GmbH" :
-			x.issuer_entity === "UAB" ? "Integrated Optics UAB" : "Integrated Optics") +
-			(/integrated optics/i.test(x.customer_name || "") ? " — an intercompany invoice." : ".")
+		? "Issued by Integrated Optics UAB" +
+			(/integrated optics/i.test(x.customer_name || "") ? " — an intercompany sale to the GmbH." : ".")
 		: "";
 	checkSupplier();
 	checkCustomer();

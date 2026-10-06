@@ -39,7 +39,7 @@ function check(l, c) { if (!c) fails++; console.log((c ? "ok   " : "FAIL ") + l)
 	var SP = X._internals.SCHEMA_PROMPT;
 	check("prompt names both of our companies", /Integrated Optics UAB/.test(SP) && /IO Integrated Optics GmbH/.test(SP));
 	check("prompt asks for the customer and the issuer flag", /customer_name/.test(SP) && /customer_tax_id/.test(SP) && /issuer_is_ours/.test(SP));
-	check("prompt states the intercompany rule", /intercompany/i.test(SP) && /UAB bills GmbH/.test(SP));
+	check("prompt states the intercompany rule", /intercompany/i.test(SP) && /UAB billing its subsidiary/.test(SP));
 
 	/* PDF and image requests */
 	await X.extractFromFile("data:application/pdf;base64,QUJD", { key: "k" }, "");

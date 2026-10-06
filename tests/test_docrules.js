@@ -121,15 +121,22 @@ eq("intercompany: UAB sells to GmbH", [inter.doc_type, inter.issuer_entity, inte
 	["sales_invoice", "UAB", "IO Integrated Optics GmbH", "DE123456789"]);
 eq("intercompany is flagged in the notes", /between our own companies/.test(inter.notes), true);
 
-var gsale = R.parse("Rechnung Rechnungsnummer: 2026-001 Rechnungsdatum: 03.06.2026 IO Integrated Optics GmbH Hauptstraße 1 " +
-	"USt-IdNr.: DE999999999 Rechnungsempfänger: Acme Photonics Ltd VAT No: GB123456789 Gesamtbetrag: 1.190,00 EUR");
-eq("GmbH sells to a third party", [gsale.doc_type, gsale.issuer_entity, gsale.customer_name, gsale.customer_tax_id, gsale.total_amount],
-	["sales_invoice", "GmbH", "Acme Photonics Ltd", "GB123456789", 1190]);
-eq("GmbH sale: its own USt-IdNr. is not the customer's", gsale.customer_tax_id !== "DE999999999", true);
+/* the GmbH is an ordinary counterparty: it bills UAB -> a purchase, supplier = the GmbH with its own codes */
+var g2u = R.parse("Rechnung Rechnungsnummer: 2026-001 Rechnungsdatum: 03.06.2026 Verkäufer: IO Integrated Optics GmbH Hauptstraße 1 " +
+	"Handelsregister: HRB 37938 USt-IdNr.: DE355412240 Rechnungsempfänger: Integrated Optics UAB Įmonės kodas: 302833442 PVM kodas: LT100007179012 Gesamtbetrag: 1.190,00 EUR");
+eq("GmbH bills UAB: purchase with the GmbH as supplier", [g2u.doc_type, g2u.issuer_is_ours, g2u.supplier_name, g2u.supplier_reg_number, g2u.supplier_tax_id, g2u.customer_name],
+	["purchase_invoice", false, "IO Integrated Optics GmbH", "HRB 37938", "DE355412240", null]);
+eq("GmbH bills UAB: noted as from the subsidiary", /subsidiary IO Integrated Optics GmbH to UAB/.test(g2u.notes), true);
+var g2u2 = R.parse("Invoice No. G-5 Date: 2026-08-01 IO Integrated Optics GmbH HRB 37938 USt-IdNr. DE355412240 Integrated Optics UAB Company code 302833442 Total: 10.00 EUR");
+eq("unlabelled GmbH + UAB: UAB is the buyer", [g2u2.issuer_is_ours, g2u2.supplier_name], [false, "IO Integrated Optics GmbH"]);
+var gsale = R.parse("Rechnung Rechnungsnummer: 2026-002 Rechnungsdatum: 03.06.2026 Verkäufer: IO Integrated Optics GmbH Hauptstraße 1 " +
+	"USt-IdNr.: DE355412240 Rechnungsempfänger: Acme Photonics Ltd VAT No: GB123456789 Gesamtbetrag: 1.190,00 EUR");
+eq("GmbH bills a third party: not a UAB document, flagged", [gsale.issuer_is_ours, /not a UAB document/.test(gsale.notes)], [false, true]);
 
-var proforma = R.parse("Proforma invoice No. PF-9 Date: 2026-07-01 Seller: IO Integrated Optics GmbH Buyer: Foo Oy VAT: FI12345678 Total: EUR 99.00");
-eq("proforma issued by us keeps its kind and finds the customer", [proforma.doc_type, proforma.issuer_is_ours, proforma.customer_name],
+var proforma = R.parse("Proforma invoice No. PF-9 Date: 2026-07-01 Seller: Integrated Optics UAB Buyer: Foo Oy VAT: FI12345678 Total: EUR 99.00");
+eq("proforma issued by UAB keeps its kind and finds the customer", [proforma.doc_type, proforma.issuer_is_ours, proforma.customer_name],
 	["proforma_invoice", true, "Foo Oy"]);
+eq("isUabName: UAB yes, GmbH no, bare name yes", [R.isUabName("Integrated Optics UAB"), R.isUabName("IO Integrated Optics GmbH"), R.isUabName("Integrated Optics")], [true, false, true]);
 
 /* unlabelled letterhead: the Sales Invoice choice breaks the tie, otherwise we are the buyer */
 var bare = "Integrated Optics UAB Company code: 302833442 Foo Optics UAB Company code: 111222333 Invoice No. A-1 Date: 2026-01-05 Total: 10.00 EUR";
