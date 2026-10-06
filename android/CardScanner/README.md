@@ -1,4 +1,4 @@
-# Card Scanner (Android) — version 1.3
+# Card Scanner (Android) — version 1.4
 
 Offline business card scanner that exports ERPNext-ready Excel files. No server, no account, no ERPNext connection.
 
@@ -57,6 +57,17 @@ report.
 `test_export.py` loads the WebView assets in headless Chromium with a shim bridge, parses three sample cards, runs a full export and verifies the produced workbooks with openpyxl — including that column A stays blank and data starts on the correct row.
 
 The native layer (camera intent, ML Kit, MediaStore, share sheet) has no automated test here because no Android device or emulator was available; it is exercised on first run on the phone.
+
+## New in 1.4
+
+Version 1.4 turns the scanner into an accounts-document manager as well as a
+business-card scanner. A new **Documents** tab takes a PDF (purchase, proforma
+or sales invoice, customs declaration, customs-declaration invoice, shipping
+invoice), reads its text, asks Claude to pull out the fields, lets you review
+them, and creates an **Accounts Document** in ERPNext with the PDF attached.
+It flags duplicate suppliers (one tap to merge) and suggests the parent
+document, which you confirm. The rivile / ilte / paid ticks are never set by
+the app. There is also a Windows/macOS desktop build (see `electron/`).
 
 ## New in 1.3
 

@@ -75,7 +75,7 @@ function doFetch(method, url, headersJson, body, timeout, id, rawBodyOnly) {
 /* ------------------------------------------------------------------- the bridge */
 
 window.Android = {
-	appVersion: function () { return "1.3-desktop"; },
+	appVersion: function () { return "1.4-desktop"; },
 	toast: function (msg) { console.log("[toast]", msg); },
 
 	takePhoto: function () {

@@ -1,6 +1,6 @@
 # Card Scanner for iPhone — building and installing
 
-Version 1.3
+Version 1.4
 
 This folder is a complete, ready-to-open Xcode project. It shares the exact same
 web UI as the Android app, so both phones behave identically; only the camera,
@@ -116,6 +116,13 @@ unless you switch on AI cleanup in Settings and provide your own API key.
 
 ---
 
+## New in 1.4
+
+The shared web layer adds the **Documents** tab (PDF invoices and customs
+documents into the ERPNext Accounts Document doctype, with AI field extraction,
+duplicate-supplier merge and parent-document suggestion). `MARKETING_VERSION`
+is 1.4 and `CURRENT_PROJECT_VERSION` is 5.
+
 ## New in 1.3
 
 The web layer is shared with the Android build, so the iPhone app gets the same
@@ -126,7 +133,7 @@ the contact, and a supplier created when one is missing. The Integrated Optics
 mark is the app icon (`Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`,
 1024 px, opaque as the App Store requires) and the header logo.
 
-`MARKETING_VERSION` is 1.3 and `CURRENT_PROJECT_VERSION` is 4. Run
+Run
 `./sync-web-assets.sh` and then `python3 make_xcodeproj.py` after changing
 anything under the Android `assets` folder.
 

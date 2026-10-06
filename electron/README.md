@@ -1,4 +1,4 @@
-# IO Doc Scanner — desktop (Windows/macOS)
+# IO Doc Scanner — desktop (Windows/macOS) — version 1.4
 
 Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (see the root `README.md`). Business-card and accounts-document scanning both work here; the differences from the phone apps are:
 
@@ -11,6 +11,7 @@ Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (s
 - `app/main.js` — Electron main process: creates the window, and runs a small HTTP bridge + native file-picker dialogs (see below).
 - `app/preload.js` — the "native bridge" (`window.Android`) that `erp.js`/`net.js`/`app.js` already expect from Android/iOS — implemented here with Node's `fs` and Electron's `dialog`/`shell` instead of Java/Swift. This is what lets the shared web code run completely unmodified (aside from two small, backward-compatible additions noted in `preload.js`'s header comment).
 - `app/web/` — the shared UI, copied in by `sync-web-assets.sh`. **Don't hand-edit files here** — edit `android/CardScanner/app/src/main/assets/` (the source of truth) and re-run the sync script.
+- `build/icon.png`, `build/icon-mac.png` (and copies in `app/`) — the iO mark used for the taskbar/Dock/installer icons; the same artwork as the iOS app icon.
 - `package.json` — Electron + electron-builder config, targeting a `.dmg`/`.zip` for macOS (arm64 + x64) and an NSIS installer + portable `.exe` for Windows (x64).
 
 ## Why a real HTTP bridge instead of `fetch()` in the page

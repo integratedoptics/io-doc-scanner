@@ -113,7 +113,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String appVersion() {
-            return "1.2";
+            return "1.4";
         }
 
         @JavascriptInterface

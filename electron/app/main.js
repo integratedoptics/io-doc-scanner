@@ -15,7 +15,7 @@
    trade-off. */
 "use strict";
 
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require("electron");
 const path = require("path");
 const { URL } = require("url");
 const httpClient = require("./http");
@@ -30,6 +30,7 @@ function createWindow() {
 		minWidth: 380,
 		minHeight: 560,
 		title: "IO Doc Scanner",
+		icon: path.join(__dirname, "icon.png"), // window/taskbar icon on Windows and Linux
 		webPreferences: {
 			preload: path.join(__dirname, "preload.js"),
 			contextIsolation: false,
@@ -59,6 +60,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+	// macOS Dock icon when running unpackaged (`npm start`); packaged builds get theirs from the .icns
+	if (process.platform === "darwin" && app.dock) {
+		try { app.dock.setIcon(nativeImage.createFromPath(path.join(__dirname, "icon-mac.png"))); } catch (e) { /* cosmetic */ }
+	}
 	createWindow();
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
