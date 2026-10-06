@@ -2,6 +2,7 @@ import UIKit
 import WebKit
 import Vision
 import PhotosUI
+import UniformTypeIdentifiers
 
 /// Hosts the shared web UI in a WKWebView and serves every native request the
 /// web layer makes: camera, photo library, on-device OCR (Vision), file writing
@@ -9,6 +10,8 @@ import PhotosUI
 final class ScannerViewController: UIViewController {
 
     private var web: WKWebView!
+    /// True while the camera was opened for a document photo rather than a business card.
+    private var docCaptureMode = false
 
     // MARK: - lifecycle
 
@@ -97,6 +100,14 @@ final class ScannerViewController: UIViewController {
         js("window.onScan(\(s))")
     }
 
+    /// Reply to window.onDocPicked — the document picker / document camera.
+    private func sendDoc(ok: Bool, name: String = "", dataUrl: String = "", error: String = "") {
+        let payload: [String: Any] = ["ok": ok, "name": name, "dataUrl": dataUrl, "error": error]
+        guard let d = try? JSONSerialization.data(withJSONObject: payload),
+              let s = String(data: d, encoding: .utf8) else { return }
+        js("window.onDocPicked && window.onDocPicked(\(s))")
+    }
+
     private func presentToast(_ msg: String) {
         DispatchQueue.main.async {
             let label = PaddedLabel()
@@ -151,7 +162,12 @@ final class ScannerViewController: UIViewController {
 
     private func openCamera() {
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
-            sendScan(ok: false, error: "This device has no camera.")
+            if docCaptureMode {
+                docCaptureMode = false
+                sendDoc(ok: false, error: "This device has no camera.")
+            } else {
+                sendScan(ok: false, error: "This device has no camera.")
+            }
             return
         }
         let p = UIImagePickerController()
@@ -159,6 +175,34 @@ final class ScannerViewController: UIViewController {
         p.cameraCaptureMode = .photo
         p.delegate = self
         present(p, animated: true)
+    }
+
+    /// Files app: a PDF or a picture of an accounts document.
+    private func openDocumentPicker() {
+        let p: UIDocumentPickerViewController
+        if #available(iOS 14.0, *) {
+            p = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf, .jpeg, .png], asCopy: true)
+        } else {
+            p = UIDocumentPickerViewController(documentTypes: ["com.adobe.pdf", "public.jpeg", "public.png"],
+                                               in: .import)
+        }
+        p.allowsMultipleSelection = false
+        p.delegate = self
+        present(p, animated: true)
+    }
+
+    /// A picture of a document: shrink and straighten it, hand it over as a JPEG data URL.
+    /// (The reading service accepts at most 5 MB per picture.)
+    private func handleDocument(image: UIImage, name: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let big = Self.scaled(image, maxSide: 2400)
+            guard let jpg = big.jpegData(compressionQuality: 0.88) else {
+                self.sendDoc(ok: false, error: "That picture could not be prepared.")
+                return
+            }
+            self.sendDoc(ok: true, name: name,
+                         dataUrl: "data:image/jpeg;base64," + jpg.base64EncodedString())
+        }
     }
 
     private func openLibrary() {
@@ -430,6 +474,11 @@ extension ScannerViewController: WKScriptMessageHandler {
             openCamera()
         case "pickPhoto":
             openLibrary()
+        case "pickDocument":
+            openDocumentPicker()
+        case "captureDocument":
+            docCaptureMode = true
+            openCamera()
         case "reOcr":
             let name = str(0)
             let url = cardsDir.appendingPathComponent(name)
@@ -467,6 +516,15 @@ extension ScannerViewController: UIImagePickerControllerDelegate, UINavigationCo
                               didFinishPickingMediaWithInfo info:
                               [UIImagePickerController.InfoKey: Any]) {
         picker.dismiss(animated: true)
+        if docCaptureMode {
+            docCaptureMode = false
+            if let img = (info[.editedImage] as? UIImage) ?? (info[.originalImage] as? UIImage) {
+                handleDocument(image: img, name: "document-\(Int(Date().timeIntervalSince1970 * 1000)).jpg")
+            } else {
+                sendDoc(ok: false, error: "No picture came back from the camera.")
+            }
+            return
+        }
         if let img = (info[.editedImage] as? UIImage) ?? (info[.originalImage] as? UIImage) {
             handle(image: img)
         } else {
@@ -476,7 +534,48 @@ extension ScannerViewController: UIImagePickerControllerDelegate, UINavigationCo
 
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
         picker.dismiss(animated: true)
+        if docCaptureMode {
+            docCaptureMode = false
+            sendDoc(ok: false, error: "No picture taken.")
+            return
+        }
         js("window.onScanCancelled && window.onScanCancelled()")
+    }
+}
+
+extension ScannerViewController: UIDocumentPickerDelegate {
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else {
+            sendDoc(ok: false, error: "No file chosen.")
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else {
+                self.sendDoc(ok: false, error: "Cannot read that file.")
+                return
+            }
+            if data.count > 19 * 1024 * 1024 {
+                self.sendDoc(ok: false, error: "That file is too large (over 19 MB).")
+                return
+            }
+            let name = url.lastPathComponent
+            let ext = url.pathExtension.lowercased()
+            if ext == "pdf" {
+                self.sendDoc(ok: true, name: name,
+                             dataUrl: "data:application/pdf;base64," + data.base64EncodedString())
+            } else if ["jpg", "jpeg", "png", "heic"].contains(ext), let img = UIImage(data: data) {
+                let base = (name as NSString).deletingPathExtension
+                self.handleDocument(image: img, name: base + ".jpg")
+            } else {
+                self.sendDoc(ok: false, error: "Only PDF, JPEG and PNG files can be read.")
+            }
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        sendDoc(ok: false, error: "No file chosen.")
     }
 }
 

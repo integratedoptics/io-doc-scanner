@@ -43,7 +43,10 @@
           ]
         }
       ],
-      "icon": "build/icon-mac.png"
+      "icon": "build/icon-mac.png",
+      "extendInfo": {
+        "NSCameraUsageDescription": "IO Doc Scanner uses the camera to photograph business cards and accounts documents."
+      }
     },
     "win": {
       "target": [

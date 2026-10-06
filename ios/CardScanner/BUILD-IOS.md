@@ -118,9 +118,12 @@ unless you switch on AI cleanup in Settings and provide your own API key.
 
 ## New in 1.4
 
-The shared web layer adds the **Documents** tab (PDF invoices and customs
-documents into the ERPNext Accounts Document doctype, with AI field extraction,
-duplicate-supplier merge and parent-document suggestion). `MARKETING_VERSION`
+The shared web layer adds the **Documents** tab (PDF or photographed invoices and customs
+documents in English, Lithuanian or German into the ERPNext Accounts Document doctype, with a built-in reader,
+AI field extraction, duplicate-supplier merge and parent-document suggestion). Native side: `pickDocument`
+(`UIDocumentPickerViewController`, PDF/JPEG/PNG from Files) and `captureDocument` (camera) in
+`ScannerViewController.swift`, both answering `window.onDocPicked`. Not compiled in the sandbox it was written in —
+build once in Xcode and try both buttons on a device. `MARKETING_VERSION`
 is 1.4 and `CURRENT_PROJECT_VERSION` is 5.
 
 ## New in 1.3

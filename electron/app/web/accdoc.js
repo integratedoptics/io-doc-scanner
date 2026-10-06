@@ -73,16 +73,30 @@ var SECTION_NAMES = Object.keys(SECTIONS);
    match — "UAB Foo" and "Foo, UAB" and "Foo" are the same company. Not
    exhaustive; extend as real supplier names turn up false negatives. */
 var LEGAL_FORMS = [
-	"uab", "ab", "mb", "vsi", "ik", "ltd", "llc", "inc", "gmbh", "kg", "ag",
-	"oy", "as", "bv", "spol", "sro", "sp", "zoo", "sa", "plc", "co", "corp",
-	"company", "limited", "incorporated"
+	// Lithuanian
+	"uab", "ab", "mb", "vsi", "ik", "ii", "kb", "ukio", "bendrove",
+	// German / Austrian / Swiss
+	"gmbh", "kg", "kgaa", "ag", "ohg", "ug", "ek", "eg", "mbh", "co",
+	// Latvian, Estonian, Nordic, Benelux, Polish, Czech, French, Italian, Spanish
+	"sia", "ou", "oy", "oyj", "as", "aps", "bv", "nv", "spol", "sro", "sp", "zoo", "sa", "sarl", "srl", "spa", "sas",
+	// English-speaking
+	"ltd", "llc", "inc", "plc", "corp", "pte", "pvt", "company", "limited", "incorporated"
 ];
 
+/* Accents and umlauts never decide whether two names are the same company
+   ("Šiaulių Gelžbetonis" = "SIAULIU GELZBETONIS", "Müller" = "Muller"). */
+function foldAccents(s) {
+	var t = String(s || "");
+	try { t = t.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch (e) { /* very old engines: leave as is */ }
+	return t.replace(/\u00df/g, "ss").replace(/\u0142/g, "l").replace(/\u00f8/g, "o").replace(/\u0111/g, "d")
+		.replace(/\u00e6/g, "ae").replace(/\u0153/g, "oe");
+}
+
 function normalizeName(s) {
-	var t = String(s || "").toLowerCase();
+	var t = foldAccents(s).toLowerCase();
 	t = t.replace(/[.,'"()]/g, " ");
-	t = t.replace(/[^a-z0-9À-ɏ&\s-]/g, " ");
-	var words = t.split(/\s+/).filter(function (w) { return w.length; });
+	t = t.replace(/[^a-z0-9&\s-]/g, " ");
+	var words = t.split(/\s+/).filter(function (w) { return w.length && w !== "&"; });
 	words = words.filter(function (w) { return LEGAL_FORMS.indexOf(w) < 0; });
 	return words.join(" ").trim();
 }

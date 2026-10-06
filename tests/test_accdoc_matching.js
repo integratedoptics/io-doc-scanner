@@ -37,6 +37,15 @@ check("normalizeName strips trailing UAB + comma",
 check("normalizeName is case-insensitive",
 	ACC.normalizeName("Acme Ltd") === ACC.normalizeName("ACME LTD"));
 
+check("normalizeName ignores Lithuanian accents",
+	ACC.normalizeName("Šiaulių Gelžbetonis, UAB") === ACC.normalizeName("SIAULIU GELZBETONIS"));
+check("normalizeName ignores German umlauts and GmbH & Co. KG",
+	ACC.normalizeName("Müller Optik GmbH & Co. KG") === ACC.normalizeName("Muller Optik"));
+check("normalizeName treats IĮ / VšĮ / MB / AG as legal forms",
+	ACC.normalizeName("MB Žalia") === "zalia" && ACC.normalizeName("Weiss AG") === "weiss" && ACC.normalizeName("VšĮ Gera") === "gera");
+check("the real supplier matches itself with or without its legal form",
+	ACC.normalizeName("ESEMDA, UAB") === ACC.normalizeName("Esemda"));
+
 /* --- diceCoefficient: identical vs near vs unrelated --- */
 check("diceCoefficient identical strings = 1",
 	ACC.diceCoefficient("acme optics", "acme optics") === 1);

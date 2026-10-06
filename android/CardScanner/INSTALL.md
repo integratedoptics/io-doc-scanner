@@ -183,8 +183,9 @@ Installing a newer APK signed with the same key updates the app in place and kee
 Install `CardScanner-1.4.apk` over the top. Same signing key, so it is an update
 and **your saved cards and settings are kept**. A new **Documents** tab appears
 between Cards and Export for scanning invoices and customs paperwork into the
-ERPNext *Accounts Document* doctype (it uses the Anthropic key already entered
-under Settings for the AI cleanup).
+ERPNext *Accounts Document* doctype. Choose a PDF or a picture, or tap *Take a photo*. Invoices and customs
+papers in English, Lithuanian or German are read by a built-in reader without any key; add an Anthropic key under
+Settings → *Document field extraction* to have Claude read them as well (and to read scans and photos).
 
 ## Updating from 1.2 to 1.3
 

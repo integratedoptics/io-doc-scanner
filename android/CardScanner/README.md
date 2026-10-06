@@ -61,13 +61,29 @@ The native layer (camera intent, ML Kit, MediaStore, share sheet) has no automat
 ## New in 1.4
 
 Version 1.4 turns the scanner into an accounts-document manager as well as a
-business-card scanner. A new **Documents** tab takes a PDF (purchase, proforma
-or sales invoice, customs declaration, customs-declaration invoice, shipping
-invoice), reads its text, asks Claude to pull out the fields, lets you review
-them, and creates an **Accounts Document** in ERPNext with the PDF attached.
-It flags duplicate suppliers (one tap to merge) and suggests the parent
-document, which you confirm. The rivile / ilte / paid ticks are never set by
-the app. There is also a Windows/macOS desktop build (see `electron/`).
+business-card scanner, on Android, iPhone, Windows and macOS.
+
+- **Documents tab** (between Cards and Export). Choose a PDF or a picture, or
+  photograph a page, for a purchase / proforma / sales invoice, a customs
+  declaration, a customs-declaration invoice or a shipping invoice. The fields
+  are filled in for you, you check them, and **Approve** creates an
+  *Accounts Document* in ERPNext with the file attached. Duplicate suppliers
+  are flagged (one tap to merge) and the parent document is suggested for you to
+  confirm. The *rivile / ilte / paid* ticks are never set by the app.
+- **English, Lithuanian and German.** A built-in reader understands the labels
+  of all three languages ("Pardavėjas", "Pirkėjas", "Sąskaitą išrašė", "Apmokėti
+  iki", "Rechnungsempfänger", "USt-IdNr.", "Zahlbar bis", …), their month names
+  and number formats, and tells the **seller from the buyer** — your own company
+  is never taken as the supplier. It works without any key. With an Anthropic key
+  (Settings → Document field extraction) Claude reads the document as well; scans,
+  photos and PDFs without a text layer are sent to Claude as a picture. Where the
+  two disagree the AI wins, except that its occasional "supplier = our own
+  company" mistake is corrected from the built-in reader.
+- **Camera.** Phones use the camera app (*Take a photo*). The desktop app uses the
+  computer's webcam for both documents and business cards.
+- **Desktop app** for Windows and macOS (`electron/`).
+- Supplier matching ignores accents and knows Lithuanian and German company forms
+  (UAB, AB, MB, IĮ, VšĮ, GmbH, AG, KG, …).
 
 ## New in 1.3
 

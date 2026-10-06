@@ -17,8 +17,9 @@
        pickPhoto() below and cardvision.js.
 
    Desktop-specific behaviour, per the confirmed scope for this shell:
-     - No camera capture (takePhoto): desktop has no camera flow, only
-       "choose an existing picture" / drag-and-drop-equivalent file picking.
+     - Camera: "Take a photo" opens the computer's webcam in an overlay
+       (camera.js, shared with the Documents screen). A picture can also be
+       chosen from disk. (Version 1.4 — earlier it was file picker only.)
      - No on-device OCR: a picked card photo is sent to Claude (using the
        same key as document extraction) to read its fields, since vendoring
        an offline OCR/WASM engine was decided against for this shell. If no
@@ -72,15 +73,57 @@ function doFetch(method, url, headersJson, body, timeout, id, rawBodyOnly) {
 		});
 }
 
+/* A business-card picture (chosen from disk or taken with the webcam): store it, then
+   have Claude read the card. Big photos are shrunk first — the reading service accepts
+   at most 5 MB per picture. */
+function processCardPhoto(buf, mime) {
+	var dataUrl = "data:" + mime + ";base64," + buf.toString("base64");
+	var prep = buf.length > 3 * 1024 * 1024 && window.CS_CAMERA
+		? window.CS_CAMERA.shrink(dataUrl, 2400) : Promise.resolve(dataUrl);
+	prep.then(function (small) {
+		if (small !== dataUrl) { dataUrl = small; mime = "image/jpeg"; buf = Buffer.from(small.split(",")[1], "base64"); }
+		var name = "card-" + Date.now() + imageExt(mime);
+		fs.writeFileSync(path.join(IMAGES_DIR, name), buf);
+
+		var settings = (window.CS && window.CS.settings()) || {};
+		var bad = window.CS_CARDVISION.ready({ key: settings.extract_key });
+		if (bad) {
+			window.CS.showDraft({ notes: bad }, name, dataUrl);
+			return;
+		}
+		window.CS_CARDVISION.extractCard(dataUrl, { key: settings.extract_key }).then(function (x) {
+			window.CS.showDraft(x.fields || {}, name, dataUrl);
+		}).catch(function (e) {
+			window.CS.showDraft({ notes: "Automatic field recognition failed: " +
+				((e && e.message) || String(e)) + " — fill in the fields by hand." }, name, dataUrl);
+		});
+	}).catch(function (e) {
+		window.onScan({ ok: false, error: "Could not read that picture: " + ((e && e.message) || String(e)) });
+	});
+}
+
+/* macOS asks for camera permission per app; ask explicitly so the prompt always appears. */
+window.CS_CAMERA_BEFORE = function () { return ipcRenderer.invoke("camera-access"); };
+
 /* ------------------------------------------------------------------- the bridge */
 
 window.Android = {
 	appVersion: function () { return "1.4-desktop"; },
 	toast: function (msg) { console.log("[toast]", msg); },
 
+	/* Webcam: same pipeline as a picture chosen from disk afterwards. */
 	takePhoto: function () {
-		window.onScan({ ok: false,
-			error: "This computer has no camera capture — use “Choose an existing picture” instead." });
+		if (!window.CS_CAMERA || !window.CS_CAMERA.available()) {
+			window.onScan({ ok: false, error: "No camera is available — use “Choose an existing picture” instead." });
+			return;
+		}
+		window.CS_CAMERA.open({ title: "Photograph the business card",
+			hint: "Hold the card flat, fill the frame, avoid glare." }).then(function (dataUrl) {
+			if (!dataUrl) { window.onScanCancelled(); return; }
+			processCardPhoto(Buffer.from(dataUrl.split(",")[1], "base64"), "image/jpeg");
+		}).catch(function (e) {
+			window.onScan({ ok: false, error: (e && e.message) || String(e) });
+		});
 	},
 
 	/* Opens a native file picker, saves the chosen photo under this app's
@@ -92,25 +135,7 @@ window.Android = {
 		ipcRenderer.invoke("pick-file", { kind: "image" }).then(function (res) {
 			if (!res || res.canceled || !res.filePath) { window.onScanCancelled(); return; }
 			try {
-				var buf = fs.readFileSync(res.filePath);
-				var mime = imageMime(res.filePath);
-				var dataUrl = "data:" + mime + ";base64," + buf.toString("base64");
-				var name = "card-" + Date.now() + imageExt(mime);
-				fs.writeFileSync(path.join(IMAGES_DIR, name), buf);
-
-				var settings = (window.CS && window.CS.settings()) || {};
-				var bad = window.CS_CARDVISION.ready({ key: settings.extract_key });
-				if (bad) {
-					window.CS.showDraft({ notes: bad }, name, dataUrl);
-					return;
-				}
-				window.CS_CARDVISION.extractCard(dataUrl, { key: settings.extract_key }).then(function (x) {
-					var f = x.fields || {};
-					window.CS.showDraft(f, name, dataUrl);
-				}).catch(function (e) {
-					window.CS.showDraft({ notes: "Automatic field recognition failed: " +
-						((e && e.message) || String(e)) + " — fill in the fields by hand." }, name, dataUrl);
-				});
+				processCardPhoto(fs.readFileSync(res.filePath), imageMime(res.filePath));
 			} catch (e) {
 				window.onScan({ ok: false, error: "Could not read that picture: " + ((e && e.message) || String(e)) });
 			}
@@ -165,13 +190,26 @@ window.Android = {
 		} catch (e) { /* nothing sensible to fall back to */ }
 	},
 
+	/* A PDF or a picture of an accounts document. Pictures over ~3 MB are shrunk. */
 	pickDocument: function () {
-		ipcRenderer.invoke("pick-file", { kind: "pdf" }).then(function (res) {
+		ipcRenderer.invoke("pick-file", { kind: "document" }).then(function (res) {
 			if (!res || res.canceled || !res.filePath) { window.onDocPicked({ ok: false, error: "No file chosen." }); return; }
 			try {
 				var buf = fs.readFileSync(res.filePath);
-				var dataUrl = "data:application/pdf;base64," + buf.toString("base64");
-				window.onDocPicked({ ok: true, name: path.basename(res.filePath), dataUrl: dataUrl });
+				var base = path.basename(res.filePath);
+				if (/\.pdf$/i.test(base)) {
+					window.onDocPicked({ ok: true, name: base,
+						dataUrl: "data:application/pdf;base64," + buf.toString("base64") });
+					return;
+				}
+				var url = "data:" + imageMime(base) + ";base64," + buf.toString("base64");
+				var prep = buf.length > 3 * 1024 * 1024 && window.CS_CAMERA
+					? window.CS_CAMERA.shrink(url, 2400) : Promise.resolve(url);
+				prep.then(function (u) {
+					window.onDocPicked({ ok: true, name: u === url ? base : base.replace(/\.[A-Za-z0-9]+$/, "") + ".jpg", dataUrl: u });
+				}).catch(function (e) {
+					window.onDocPicked({ ok: false, error: (e && e.message) || String(e) });
+				});
 			} catch (e) {
 				window.onDocPicked({ ok: false, error: "Could not read that file: " + ((e && e.message) || String(e)) });
 			}

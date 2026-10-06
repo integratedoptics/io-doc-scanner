@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
@@ -13,6 +14,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.util.Base64;
 import android.view.View;
 import android.webkit.JavascriptInterface;
@@ -62,6 +64,13 @@ public class MainActivity extends Activity {
 
     private static final int REQ_CAMERA = 101;
     private static final int REQ_PICK = 102;
+    private static final int REQ_DOC = 103;
+    /** Largest PDF/picture accepted for document reading (the API limit is 32 MB per request). */
+    private static final int MAX_DOC_BYTES = 19 * 1024 * 1024;
+    /** The file chosen in the document picker, as a data URL, until the page fetches it. */
+    private volatile String pickedDocData = "";
+    /** True while the camera was opened for a document photo instead of a business card. */
+    private boolean captureForDoc = false;
     private static final int REQ_PERM_STORAGE = 201;
 
     private WebView web;
@@ -125,6 +134,39 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void takePhoto() {
             runOnUiThread(MainActivity.this::launchCamera);
+        }
+
+        /**
+         * Choose a PDF or a picture of an accounts document with the system file
+         * picker. The result arrives via window.onDocPicked({ok, name, error});
+         * the file itself (a data URL, possibly many MB) is then fetched with
+         * readPickedDocument() instead of being pushed through evaluateJavascript.
+         */
+        @JavascriptInterface
+        public void pickDocument() {
+            runOnUiThread(MainActivity.this::launchDocPicker);
+        }
+
+        /**
+         * Photograph an accounts document with the camera app. Same reply as
+         * pickDocument(): window.onDocPicked({ok, name, error}) and then
+         * readPickedDocument(). No text recognition is run — the picture is
+         * read by the AI service, which handles the document's own language.
+         */
+        @JavascriptInterface
+        public void captureDocument() {
+            runOnUiThread(() -> {
+                captureForDoc = true;
+                launchCamera();
+            });
+        }
+
+        /** The file chosen by pickDocument() as a data URL; empty if none. Clears it. */
+        @JavascriptInterface
+        public String readPickedDocument() {
+            String d = pickedDocData;
+            pickedDocData = "";
+            return d == null ? "" : d;
         }
 
         /** Pick an existing picture; the result arrives via window.onScan(). */
@@ -394,7 +436,12 @@ public class MainActivity extends Activity {
             i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivityForResult(i, REQ_CAMERA);
         } catch (Exception e) {
-            postScanError("Cannot open the camera: " + e.getMessage());
+            if (captureForDoc) {
+                captureForDoc = false;
+                postDocPicked(false, "", "Cannot open the camera: " + e.getMessage());
+            } else {
+                postScanError("Cannot open the camera: " + e.getMessage());
+            }
         }
     }
 
@@ -405,14 +452,146 @@ public class MainActivity extends Activity {
         startActivityForResult(i, REQ_PICK);
     }
 
+    private void launchDocPicker() {
+        try {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "image/jpeg", "image/png"});
+            startActivityForResult(i, REQ_DOC);
+        } catch (Exception e) {
+            postDocPicked(false, "", "Cannot open the file picker: " + e.getMessage());
+        }
+    }
+
+    private String displayName(Uri uri) {
+        String name = "";
+        try (Cursor c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                String n = c.getString(0);
+                if (n != null) name = n;
+            }
+        } catch (Exception ignored) {
+        }
+        if (name.isEmpty()) {
+            String last = uri.getLastPathSegment();
+            name = last == null ? "document" : last;
+        }
+        return name;
+    }
+
+    private void handleDocResult(int res, Intent data) {
+        if (res != RESULT_OK || data == null || data.getData() == null) {
+            postDocPicked(false, "", "No file chosen.");
+            return;
+        }
+        final Uri uri = data.getData();
+        new Thread(() -> {
+            try {
+                String name = displayName(uri);
+                String lower = name.toLowerCase();
+                String mime = getContentResolver().getType(uri);
+                if (mime == null || mime.equals("application/octet-stream")) {
+                    if (lower.endsWith(".pdf")) mime = "application/pdf";
+                    else if (lower.endsWith(".png")) mime = "image/png";
+                    else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) mime = "image/jpeg";
+                }
+                if (mime == null || !(mime.equals("application/pdf") || mime.equals("image/jpeg") || mime.equals("image/png"))) {
+                    postDocPicked(false, "", "Only PDF, JPEG and PNG files can be read.");
+                    return;
+                }
+                byte[] bytes;
+                try (InputStream in = getContentResolver().openInputStream(uri)) {
+                    bytes = readAllLimited(in, MAX_DOC_BYTES);
+                }
+                if (bytes == null) {
+                    postDocPicked(false, "", "That file is too large (over 19 MB).");
+                    return;
+                }
+                if (!mime.equals("application/pdf")) {
+                    // A gallery photo can be 10+ MB; shrink and straighten it like a camera capture
+                    // (the reading service accepts at most 5 MB per picture).
+                    File tmp = new File(getCacheDir(), "doc-" + System.currentTimeMillis() + ".img");
+                    try (FileOutputStream out = new FileOutputStream(tmp)) {
+                        out.write(bytes);
+                    }
+                    Bitmap bmp = decodeScaled(tmp, 2400);
+                    if (bmp != null) {
+                        bmp = applyExifRotation(tmp, bmp);
+                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                        bmp.compress(Bitmap.CompressFormat.JPEG, 88, bos);
+                        bytes = bos.toByteArray();
+                        mime = "image/jpeg";
+                        if (!lower.endsWith(".jpg") && !lower.endsWith(".jpeg")) {
+                            name = name.replaceAll("\\.[A-Za-z0-9]+$", "") + ".jpg";
+                        }
+                    }
+                    tmp.delete();
+                }
+                pickedDocData = "data:" + mime + ";base64," + Base64.encodeToString(bytes, Base64.NO_WRAP);
+                postDocPicked(true, name, "");
+            } catch (Throwable e) {
+                postDocPicked(false, "", "Cannot read the file: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    /** A camera photo of a document: shrink, straighten, hand over as a JPEG data URL. */
+    private void finishDocumentCapture(File shot) {
+        try {
+            if (shot == null || !shot.exists()) {
+                postDocPicked(false, "", "The camera returned no picture.");
+                return;
+            }
+            Bitmap bmp = decodeScaled(shot, 2400);
+            if (bmp == null) {
+                postDocPicked(false, "", "Unsupported image.");
+                return;
+            }
+            bmp = applyExifRotation(shot, bmp);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            bmp.compress(Bitmap.CompressFormat.JPEG, 88, bos);
+            shot.delete();
+            pickedDocData = "data:image/jpeg;base64," + Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
+            postDocPicked(true, "document-" + System.currentTimeMillis() + ".jpg", "");
+        } catch (Throwable e) {
+            postDocPicked(false, "", "Capture failed: " + e.getMessage());
+        }
+    }
+
+    private void postDocPicked(boolean ok, String name, String error) {
+        JSONObject o = new JSONObject();
+        try {
+            o.put("ok", ok);
+            o.put("name", name);
+            o.put("error", error);
+        } catch (Exception ignored) {
+        }
+        final String js = "window.onDocPicked && window.onDocPicked(" + o + ")";
+        web.post(() -> web.evaluateJavascript(js, null));
+    }
+
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_DOC) {
+            handleDocResult(res, data);
+            return;
+        }
         if (res != RESULT_OK) {
+            if (req == REQ_CAMERA && captureForDoc) {
+                captureForDoc = false;
+                postDocPicked(false, "", "No picture taken.");
+                return;
+            }
             web.post(() -> web.evaluateJavascript("window.onScanCancelled && window.onScanCancelled()", null));
             return;
         }
-        if (req == REQ_CAMERA) {
+        if (req == REQ_CAMERA && captureForDoc) {
+            captureForDoc = false;
+            final File shot = pendingCameraFile;
+            new Thread(() -> finishDocumentCapture(shot)).start();
+        } else if (req == REQ_CAMERA) {
             new Thread(() -> importAndRecognize(pendingCameraFile)).start();
         } else if (req == REQ_PICK && data != null && data.getData() != null) {
             final Uri uri = data.getData();
@@ -595,6 +774,20 @@ public class MainActivity extends Activity {
         int n;
         while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
         in.close();
+        return bos.toByteArray();
+    }
+
+    /** Like readAll, but returns null as soon as the input exceeds `limit` bytes. */
+    private static byte[] readAllLimited(InputStream in, int limit) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        byte[] buf = new byte[16384];
+        int n;
+        long total = 0;
+        while ((n = in.read(buf)) > 0) {
+            total += n;
+            if (total > limit) return null;
+            bos.write(buf, 0, n);
+        }
         return bos.toByteArray();
     }
 

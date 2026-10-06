@@ -506,9 +506,11 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
           <option value="shipping_invoice">Shipping Invoice</option>
         </select>
       </div>
-      <button class="b" id="btn-doc-pick">Scan or choose a PDF</button>
+      <button class="b" id="btn-doc-pick">Choose a PDF or picture</button>
+      <button class="b" id="btn-doc-photo" style="margin-top:8px;display:none">Take a photo</button>
       <p class="hint" id="d-file-name"></p>
-      <p class="hint">The PDF is read on the device. If a document-extraction key is set in Settings, its text is sent to Claude to pre-fill the fields below — otherwise fill them in by hand.</p>
+      <img id="d-preview" alt="" style="display:none;max-width:100%;max-height:260px;border-radius:8px;margin:6px 0">
+      <p class="hint">Invoices and customs papers in English, Lithuanian or German. A PDF's text is read on the device and filled in by a built-in reader straight away; with an Anthropic key set in Settings, Claude then reads it too (scans and photos are sent to Claude as a picture). Check every field before approving.</p>
     </div>
 
     <div class="card" id="box-doc-form" style="display:none">
@@ -598,6 +600,8 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 <script src="cardvision.js"></script>
 <script src="pdf.min.js"></script>
 <script src="pdfview.js"></script>
+<script src="docrules.js"></script>
+<script src="camera.js"></script>
 <script src="docscan.js"></script>
 <script src="app.js"></script>
 </body>

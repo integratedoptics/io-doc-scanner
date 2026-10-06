@@ -15,7 +15,7 @@
    trade-off. */
 "use strict";
 
-const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, systemPreferences } = require("electron");
 const path = require("path");
 const { URL } = require("url");
 const httpClient = require("./http");
@@ -60,6 +60,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+	// Only the camera may be requested by the page; everything else (location, notifications,
+	// microphone, ...) is refused. Electron would otherwise grant every request.
+	session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+		const mt = details && details.mediaTypes;
+		callback(permission === "media" && (!mt || mt.every((t) => t === "video")));
+	});
+	session.defaultSession.setPermissionCheckHandler((wc, permission) => permission === "media");
 	// macOS Dock icon when running unpackaged (`npm start`); packaged builds get theirs from the .icns
 	if (process.platform === "darwin" && app.dock) {
 		try { app.dock.setIcon(nativeImage.createFromPath(path.join(__dirname, "icon-mac.png"))); } catch (e) { /* cosmetic */ }
@@ -80,11 +87,28 @@ ipcMain.handle("pick-file", async (event, opts) => {
 	const kind = (opts && opts.kind) || "image";
 	const filters = kind === "pdf"
 		? [{ name: "PDF documents", extensions: ["pdf"] }]
-		: [{ name: "Images", extensions: ["jpg", "jpeg", "png"] }];
+		: kind === "document"
+			? [{ name: "PDF or picture", extensions: ["pdf", "jpg", "jpeg", "png"] }]
+			: [{ name: "Images", extensions: ["jpg", "jpeg", "png"] }];
 	const win = BrowserWindow.fromWebContents(event.sender);
 	const res = await dialog.showOpenDialog(win, { properties: ["openFile"], filters });
 	if (res.canceled || !res.filePaths.length) return { canceled: true };
 	return { canceled: false, filePath: res.filePaths[0] };
+});
+
+/* ---------------------------------------------------------------- camera permission
+   macOS keeps a per-app camera permission and only shows its prompt when asked;
+   Windows and Linux need nothing here. Resolves true when the camera may be used. */
+ipcMain.handle("camera-access", async () => {
+	if (process.platform !== "darwin") return true;
+	try {
+		const status = systemPreferences.getMediaAccessStatus("camera");
+		if (status === "granted") return true;
+		if (status === "denied" || status === "restricted") return false;
+		return await systemPreferences.askForMediaAccess("camera");
+	} catch (e) {
+		return true;   // let the browser layer try and report its own error
+	}
 });
 
 /* ------------------------------------------------------------------ HTTP bridge

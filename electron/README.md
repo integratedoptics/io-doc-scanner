@@ -2,8 +2,8 @@
 
 Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (see the root `README.md`). Business-card and accounts-document scanning both work here; the differences from the phone apps are:
 
-- **No camera capture.** Only "choose an existing picture" — pick a photo/scan of a card, or a PDF, from disk. There's no live camera flow on desktop.
-- **No on-device OCR for cards.** Android/iOS run OCR natively; desktop has none, so a picked card photo is sent to Claude (the same Anthropic key configured for document field extraction, in Settings) to read its fields directly. If no key is set, or the request fails, the picture is still saved and attached — just fill in the fields by hand. Document scanning (PDFs) is unaffected by this: it always reads the PDF's text on-device with pdf.js first, same as the other shells.
+- **Webcam capture (1.4).** *Take a photo* opens the computer's camera in an overlay — for business cards and for documents. Pictures and PDFs can also be chosen from disk. On macOS the first use shows the system camera prompt; if it was refused, switch it on under System Settings → Privacy & Security → Camera (when started with `npm start` the app is listed as "Electron"). The page may request nothing but the camera. For a future signed/notarized Mac build add the `com.apple.security.device.camera` entitlement.
+- **No on-device OCR for cards.** Android/iOS run OCR natively; desktop has none, so a picked card photo is sent to Claude (the same Anthropic key configured for document field extraction, in Settings) to read its fields directly. If no key is set, or the request fails, the picture is still saved and attached — just fill in the fields by hand. Document scanning always reads a PDF's text on-device with pdf.js first and fills the form with the built-in English/Lithuanian/German reader (`docrules.js`); Claude is only asked as well when a key is set, and receives the file itself for scans and photos.
 - Everything else — Settings, ERPNext sync, Excel export, the Documents review/approve screen, duplicate-supplier detection/merge — is the same shared code, unmodified.
 
 ## Layout

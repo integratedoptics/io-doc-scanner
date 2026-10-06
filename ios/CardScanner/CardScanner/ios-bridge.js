@@ -33,6 +33,11 @@ window.Android = {
 	pickPhoto: function () { send("pickPhoto", []); },
 	reOcr: function (name) { send("reOcr", [String(name || "")]); },
 
+	/* Accounts documents: a PDF/picture from Files, or a photo from the camera.
+	   Both answer through window.onDocPicked({ok, name, dataUrl, error}). */
+	pickDocument: function () { send("pickDocument", []); },
+	captureDocument: function () { send("captureDocument", []); },
+
 	readData: function (name) {
 		try { return localStorage.getItem("cs:" + name) || ""; } catch (e) { return ""; }
 	},

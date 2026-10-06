@@ -48,6 +48,9 @@ var SCHEMA_PROMPT =
 "  \"notes\": anything worth a human double-checking (illegible text, a card in an " +
 "unfamiliar script, ambiguous name-ordering), or \"\"\n" +
 "}\n\n" +
+"Cards may be in English, Lithuanian or German: keep names, streets and cities exactly as printed, " +
+"with their letters intact (ą č ę ė į š ų ū ž ä ö ü ß), and write the country in English " +
+"(Lietuva = Lithuania, Deutschland = Germany) unless it is not printed.\n" +
 "Never invent a value that isn't visible on the card. If unsure which printed number is " +
 "mobile vs. landline, put it in \"phone\" and say so in \"notes\".";
 

@@ -20,7 +20,7 @@ var A = window.Android || (window.Android = {
 		if (!inp) {
 			inp = document.createElement("input");
 			inp.type = "file";
-			inp.accept = "application/pdf";
+			inp.accept = "application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png";
 			inp.style.display = "none";
 			inp.id = "doc-file-fallback";
 			document.body.appendChild(inp);
