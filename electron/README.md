@@ -26,7 +26,8 @@ cd electron
 npm install
 npm start               # run it locally
 npm run dist:mac        # build a signed... well, an UNSIGNED .dmg/.zip for macOS
-npm run dist:win        # build an unsigned NSIS installer + portable .exe for Windows
+npm run dist:win        # build an unsigned NSIS installer + portable .exe + ZIP for Windows
+npm run dist:win:zip    # only the Windows ZIP (unzip and run, no install)
 ```
 
 Step-by-step instructions for installing on Windows PCs: [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md).

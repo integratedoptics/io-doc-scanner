@@ -19,6 +19,7 @@ time — that is expected (see step 3).
 4. In `electron\dist` you now have two files:
    - `IO Doc Scanner Setup 1.4.0.exe` — the installer (Start-menu entry, uninstaller, can be updated by installing over it)
    - `IO Doc Scanner 1.4.0.exe` — the portable version (no installation, runs from wherever you put it, e.g. a USB stick or a network share)
+   - the `.zip` file (named after the app and version, e.g. `…-1.4.0-win.zip`) — a ZIP of the unpacked app: unzip it anywhere, open the folder and double-click `IO Doc Scanner.exe`. No installation, no admin rights, and it starts faster than the single-file portable version, which unpacks itself on every launch.
 
    Copy whichever you prefer to the other PCs (shared drive, USB stick, e-mail to yourself …).
    Building takes a few minutes the first time because it downloads Electron.
@@ -36,6 +37,14 @@ time — that is expected (see step 3).
      the built-in reader still fills in English, Lithuanian and German invoices.
 5. **Camera:** Windows may ask whether apps may use the camera — allow it
    (*Settings → Privacy & security → Camera → Let desktop apps access your camera*).
+
+## The easiest way to run it on a PC: the ZIP
+
+1. Copy the `.zip` file to the PC and right-click → **Extract All** (a folder such as `C:\Tools\IO Doc Scanner` or one on a shared drive).
+2. Open the folder and double-click **IO Doc Scanner.exe** (right-click → *Send to → Desktop (create shortcut)* for an icon).
+3. First run only: SmartScreen → **More info → Run anyway**, then enter the Settings as above.
+
+To update, delete the old folder and unzip the new one; settings stay in `%APPDATA%\IO Doc Scanner`. To build only the ZIP: `npm run dist:win:zip`.
 
 ## Updating, removing, silent install
 
