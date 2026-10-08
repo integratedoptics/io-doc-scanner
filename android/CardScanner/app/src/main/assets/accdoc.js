@@ -434,13 +434,23 @@ function createChild(section, parentName, fields, fileDataUrl, fileName) {
 			return e.createDoc(DOCTYPE, c.doc, c.notes).then(function (name) {
 				return e.attachFile(DOCTYPE, name, fileDataUrl, fileName, fileField).then(function (fileResult) {
 					var out = { name: name, parent: parentName, section: section, file: fileResult, notes: c.notes };
-					if (parent.is_parent_document) return out;
-					return e.updateDoc(DOCTYPE, parentName, { is_parent_document: 1 }).then(function () { return out; },
-						function () {
-							out.notes = (out.notes || []).concat([{ field: "is_parent_document", message:
-								"Could not tick \u201cparent document\u201d on " + parentName + " — please tick it in ERPNext." }]);
-							return out;
-						});
+					/* the parent record shows its children: its own cd_file / cd_invoice_file / shipping_invoice_file
+					   field links to the child's file (and its "received" box is ticked so the section is visible);
+					   a plain attachment has no such field. The parent is also marked as a parent. */
+					var up = {};
+					if (!parent.is_parent_document) up.is_parent_document = 1;
+					if (!attachment && fileResult && fileResult.state === "created" && fileResult.url) {
+						up[SECTIONS[section].file] = fileResult.url;
+						if (SECTIONS[section].receivedFlag) up[SECTIONS[section].receivedFlag] = 1;
+					}
+					if (!Object.keys(up).length) return out;
+					return e.updateDoc(DOCTYPE, parentName, up).then(function () { return out; }, function (err) {
+						var why = err && err.errors && err.errors[0] && err.errors[0].message ? " (" + err.errors[0].message + ")" : "";
+						out.notes = (out.notes || []).concat([{ field: SECTIONS[section] ? SECTIONS[section].file : "is_parent_document", message:
+							"Could not update " + parentName + " — its \u201cparent document\u201d box and the link to this file in " +
+							(attachment ? "its record" : "\u201c" + SECTIONS[section].file + "\u201d") + " are not set" + why + "." }]);
+						return out;
+					});
 				});
 			});
 		});

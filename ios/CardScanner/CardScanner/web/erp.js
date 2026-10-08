@@ -865,17 +865,28 @@ function updateDoc(doctype, name, patch) {
 	});
 }
 
-/* Uploads a file (a scanned PDF, typically) and, when fieldname is given,
-   writes the resulting file_url back into that Attach field on the parent
-   document. An Attach field stores a URL string on the document itself, so
-   creating the File record alone is not enough for it to show as attached
-   in that specific field — ERPNext also needs the field written. */
+/* Uploads a file (a scanned PDF, typically), attaches it to a document and — when fieldname is given —
+   writes the resulting file_url into that Attach field of the document. An Attach field stores a URL
+   string on the document itself, so creating the File record alone is not enough for it to show in that
+   field: the field has to be written too.
+
+   Nothing is assumed to have worked: the File record is read back (it must have an address and the
+   stored size must match what was sent), the address is requested from the server (a 404 here is the
+   "attachment exists but the link is dead" case), and the field write is checked. Whatever fails is
+   reported in plain words instead of being swallowed. Resolves { state: "created"|"error"|"off", name,
+   url, size, errors }. */
 function attachFile(doctype, name, dataUrl, filename, fieldname) {
 	if (!dataUrl || !name) return Promise.resolve({ state: "off" });
 	var base64 = String(dataUrl).indexOf(",") >= 0
 		? String(dataUrl).split(",").slice(1).join(",")
 		: String(dataUrl);
 	if (!base64) return Promise.resolve({ state: "off" });
+	var sent = Math.floor(base64.replace(/=+$/, "").length * 3 / 4);
+	function fail(message, extra) {
+		var out = { state: "error", errors: [{ field: fieldname || "", message: message }] };
+		if (extra) Object.keys(extra).forEach(function (k) { out[k] = extra[k]; });
+		return out;
+	}
 	return createDoc("File", {
 		file_name: filename || ("document-" + Date.now() + ".pdf"),
 		is_private: 1,
@@ -886,19 +897,42 @@ function attachFile(doctype, name, dataUrl, filename, fieldname) {
 		content: base64
 	}, []).then(function (fileName) {
 		return fetchDoc("File", fileName).then(function (fdoc) {
-			var url = fdoc && fdoc.file_url ? fdoc.file_url : null;
-			if (fieldname && url) {
+			var url = fdoc && fdoc.file_url ? fdoc.file_url : "";
+			var size = fdoc && fdoc.file_size ? Number(fdoc.file_size) : 0;
+			var info = { name: fileName, url: url, size: size };
+			if (!url) {
+				return fail("ERPNext created the attachment record but gave it no file address, so the file cannot be opened.", info);
+			}
+			if (size && sent && Math.abs(size - sent) > Math.max(16, sent * 0.02)) {
+				return fail("ERPNext stored " + size + " bytes but " + sent + " were sent — the attachment " +
+					"(" + url + ") is not the file that was scanned.", info);
+			}
+			/* is the file really there? ask for its first bytes */
+			var h = authHeaders(false);
+			h["Range"] = "bytes=0-15";
+			return request("GET", cfg.url + encodeURI(url), h, "", 30).then(function (r) {
+				if (r.status === 404) {
+					return fail("ERPNext lists the attachment, but its file is missing on the server (404 for " + url + ").", info);
+				}
+				if (r.status >= 400) {
+					return fail("The attachment was uploaded, but the server refuses to serve it (" + r.status + " for " + url + ").", info);
+				}
+				return null;
+			}, function () { return null; /* could not check — do not claim a failure */ }).then(function (bad) {
+				if (bad) return bad;
+				if (!fieldname) return { state: "created", name: fileName, url: url, size: size };
 				var patch = {};
 				patch[fieldname] = url;
 				return updateDoc(doctype, name, patch).then(function () {
-					return { state: "created", name: fileName, url: url };
+					return { state: "created", name: fileName, url: url, size: size };
+				}, function (e) {
+					var m = e && e.errors && e.errors[0] && e.errors[0].message ? e.errors[0].message : (e && e.message) || "unknown error";
+					return fail("The file is attached, but it could not be written into the \u201c" + fieldname + "\u201d field: " + m, info);
 				});
-			}
-			return { state: "created", name: fileName, url: url };
-		}).catch(function () {
-			/* the File was created; only reading it back (or the field patch)
-			   failed — report success on the upload itself */
-			return { state: "created", name: fileName, url: null };
+			});
+		}, function (e) {
+			var m = e && e.errors && e.errors[0] && e.errors[0].message ? e.errors[0].message : (e && e.message) || "unknown error";
+			return fail("The file was uploaded, but ERPNext could not read the attachment record back: " + m, { name: fileName });
 		});
 	}).catch(function (e) {
 		return { state: "error",

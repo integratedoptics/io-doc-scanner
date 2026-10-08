@@ -14,7 +14,7 @@ sandbox.window.CS_ERP = { shared: {
 		if (dt === "Sales Invoice") return Promise.reject(new Error("no permission"));
 		return Promise.resolve([]);
 	},
-	attachFile: function (dt, name, data, fn, field) { calls.push({ attach: [dt, name, fn, field] }); return Promise.resolve({ state: "created" }); },
+	attachFile: function (dt, name, data, fn, field) { calls.push({ attach: [dt, name, fn, field] }); return Promise.resolve({ state: "created", name: "F-" + name, url: "/private/files/" + name + "-" + (field || "x") + ".pdf" }); },
 	fetchDoc: function (dt, name) { return Promise.resolve(docs[name] || null); },
 	clean: function (dt, doc, notes) { return Promise.resolve({ doc: doc, notes: notes }); },
 	createDoc: function (dt, doc) { created.push(doc); return Promise.resolve("ACC-NEW-" + created.length); },
@@ -66,8 +66,17 @@ rows = [
 	check("customs declaration: separate child record with its own section, linked to the parent",
 		c1.parent_document === "ACC-1" && c1.naming_series === "PURCHASE-" && c1.cd_document_no === "26LTVA100025C7F4R1" && c1.customs_declaration_cd_received === 1 &&
 		!c1.document_no && !c1.purchase_invoice_received && calls[calls.length - 1].attach[3] === "cd_file" && cd.parent === "ACC-1", JSON.stringify(c1));
+	var pu = updates[updates.length - 1];
+	check("customs declaration: the PARENT's cd_file shows the child's file and its section is switched on",
+		pu[0] === "ACC-1" && pu[1].cd_file === "/private/files/ACC-NEW-3-cd_file.pdf" && pu[1].customs_declaration_cd_received === 1, JSON.stringify(updates));
+	check("the child keeps its own file in its own cd_file", calls[calls.length - 1].attach[1] === "ACC-NEW-3" && calls[calls.length - 1].attach[3] === "cd_file");
 	var sh = await ACC.createChild("shipping", "ACC-1", { documentNo: "VS396551", documentDate: "2026-08-26", supplierName: "UAB DHL LIETUVA" }, "x", "s.pdf");
 	check("shipping invoice child uses the shipping section and file field", created[created.length - 1].shipping_invoice_document_no === "VS396551" && calls[calls.length - 1].attach[3] === "shipping_invoice_file");
+	var pu2 = updates[updates.length - 1];
+	check("shipping invoice: the parent's shipping_invoice_file links to the child's file", pu2[1].shipping_invoice_file === "/private/files/ACC-NEW-4-shipping_invoice_file.pdf" && pu2[1].invoice_for_shipping_received === 1, JSON.stringify(pu2));
+	var ci = await ACC.createChild("cdInvoice", "ACC-3", { documentNo: "VS1", documentDate: "2026-09-01", supplierName: "UAB DHL LIETUVA" }, "x", "ci.pdf");
+	var pu3 = updates[updates.length - 1];
+	check("CD invoice: the parent's cd_invoice_file links to the child's file; an already marked parent keeps its mark untouched", pu3[0] === "ACC-3" && /cd_invoice_file/.test(JSON.stringify(pu3[1])) && !("is_parent_document" in pu3[1]), JSON.stringify(pu3));
 	failUpdate = true; docs["ACC-9"] = { name: "ACC-9", naming_series: "SALES-" };
 	var warn = await ACC.createChild("cdInvoice", "ACC-9", { documentNo: "N", documentDate: "2026-01-01", supplierName: "S" }, "x", "i.pdf");
 	check("if the parent cannot be marked, the child still exists and a note says so", warn.name && warn.notes.some(function (n) { return /parent document/.test(n.message); }), JSON.stringify(warn));
