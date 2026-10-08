@@ -836,18 +836,21 @@ function ensurePrivate(fileName, fdoc) {
 }
 
 /* ----------------------------------------------------------- file upload
-   Two calls to Frappe's own /api/method/upload_file — the endpoint ERPNext's web page uses:
+   The file goes up through Frappe's /api/method/uploadfile, as an ordinary form post:
 
-     1. upload: multipart/form-data with the file and is_private=1. The server stores the file and answers
-        with its address (/private/files/<name>). Nothing is attached yet.
-     2. attach: a plain form post with doctype, docname, file_url, filename and is_private=1, which creates
-        the File record that links the stored file to the document.
+     from_form=1, doctype, docname, docfield, filename, filedata (the file, base64), is_private=1
 
-   The address is then written into the Attach field of the document by the caller.
+   The server stores the file under /private/files/ and attaches it to the document in one go, and
+   answers with the File record; the caller then writes the address into the Attach field and checks
+   that the file really is served.
 
-   The native HTTP bridges carry text only, so the multipart body of step 1 is assembled here as bytes,
-   sent as base64 text, and flagged with the X-CS-Body-Encoding header; the native side (Android, iOS,
-   the desktop shell) turns it back into the raw bytes before it goes on the wire and removes the header. */
+   uploadfile is deprecated in Frappe v15 and gone in v16. If the server says it does not know it
+   (404/405, or "not whitelisted"), the upload falls back to the current endpoint, /api/method/upload_file,
+   in two steps: a multipart upload of the file (is_private=1), then a form post that attaches the stored
+   file with doctype, docname, file_url, filename and is_private. The native HTTP bridges carry text only,
+   so that multipart body is assembled here as bytes, sent as base64 text, and flagged with the
+   X-CS-Body-Encoding header; the native side (Android, iOS, the desktop shell) turns it back into the raw
+   bytes before it goes on the wire and removes the header. */
 
 function utf8Bytes(str) {
 	var bin = unescape(encodeURIComponent(String(str)));
@@ -957,17 +960,64 @@ function linkFile(doctype, docname, fileUrl, filename) {
 	});
 }
 
-/* Both steps. Resolves { up, linked }; a failure of step 2 carries the stored file's address. */
-function uploadAndAttach(dataUrl, filename, doctype, docname) {
-	return uploadFile(dataUrl, filename).then(function (up) {
-		return linkFile(doctype, docname, up.file_url, filename).then(function (linked) {
-			return { up: up, linked: linked };
-		}, function (err) {
-			var m = err && err.errors && err.errors[0] && err.errors[0].message ? err.errors[0].message : (err && err.message) || "unknown error";
-			var e = new Error("The file was uploaded (" + up.file_url + "), but ERPNext could not attach it to " +
-				doctype + " " + docname + ": " + m);
-			e.uploaded = up;
+/* The primary method: uploadfile with from_form. Resolves { up } with the File record, read back. */
+function uploadFileForm(dataUrl, filename, doctype, docname, fieldname) {
+	var base64 = String(dataUrl).indexOf(",") >= 0
+		? String(dataUrl).split(",").slice(1).join(",")
+		: String(dataUrl);
+	return login().then(function () {
+		return request("POST", methodUrl("uploadfile"), authHeaders(false), form({
+			from_form: 1, doctype: doctype, docname: docname, docfield: fieldname || undefined,
+			filename: filename, filedata: base64, is_private: 1
+		}), 120);
+	}).then(function (r) {
+		if (r.status < 200 || r.status >= 300) {
+			var e = new Error("ERPNext rejected the upload");
+			e.errors = toErrors(r.status, r.body, "File");
+			e.status = r.status;
+			e.body = r.body;
 			throw e;
+		}
+		var j = {};
+		try { j = JSON.parse(r.body || "{}"); } catch (x) { /* not JSON */ }
+		if (j.message && j.message.name) return j.message;
+		/* answered with nothing: Frappe does that for a duplicate (the same file already attached) */
+		return getList("File", [["attached_to_doctype", "=", doctype], ["attached_to_name", "=", docname],
+			["file_name", "=", filename]], ["name", "file_url", "file_size", "is_private"], 1, "creation desc")
+			.then(function (rows) {
+				if (rows && rows[0]) return rows[0];
+				throw new Error("ERPNext did not store the file (no record came back from uploadfile).");
+			});
+	}).then(function (m) {
+		return fetchDoc("File", m.name).then(function (fdoc) { return fdoc || m; }, function () { return m; });
+	}).then(function (fdoc) {
+		return ensurePrivate(fdoc.name, fdoc);
+	}).then(function (fdoc) {
+		return { up: fdoc, linked: fdoc };
+	});
+}
+
+function noSuchMethod(e) {
+	var st = e && e.status;
+	if (st === 404 || st === 405) return true;
+	return st === 403 && /whitelist|not found|failed to get method/i.test(String(e.body || ""));
+}
+
+/* Resolves { up, linked }; a failure after the file was stored carries its address. */
+function uploadAndAttach(dataUrl, filename, doctype, docname, fieldname) {
+	return uploadFileForm(dataUrl, filename, doctype, docname, fieldname).catch(function (err) {
+		if (!noSuchMethod(err)) throw err;
+		/* this server has no uploadfile any more: multipart upload, then attach */
+		return uploadFile(dataUrl, filename).then(function (up) {
+			return linkFile(doctype, docname, up.file_url, filename).then(function (linked) {
+				return { up: up, linked: linked };
+			}, function (e2) {
+				var m = e2 && e2.errors && e2.errors[0] && e2.errors[0].message ? e2.errors[0].message : (e2 && e2.message) || "unknown error";
+				var e = new Error("The file was uploaded (" + up.file_url + "), but ERPNext could not attach it to " +
+					doctype + " " + docname + ": " + m);
+				e.uploaded = up;
+				throw e;
+			});
 		});
 	});
 }
@@ -1033,7 +1083,7 @@ function attachFile(doctype, name, dataUrl, filename, fieldname) {
 		if (extra) Object.keys(extra).forEach(function (k) { out[k] = extra[k]; });
 		return out;
 	}
-	return uploadAndAttach(dataUrl, filename || ("document-" + Date.now() + ".pdf"), doctype, name)
+	return uploadAndAttach(dataUrl, filename || ("document-" + Date.now() + ".pdf"), doctype, name, fieldname)
 		.then(function (r) {
 			var fileName = r.up.name;
 			var url = (r.linked && r.linked.file_url) || r.up.file_url || "";

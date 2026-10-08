@@ -21,7 +21,8 @@ var server = http.createServer(function (req, res) {
 		var body = Buffer.concat(chunks);
 		got.headers = req.headers; got.body = body;
 		res.setHeader("Content-Type", "application/json");
-		if (/multipart/.test(req.headers["content-type"] || "")) {
+		if (req.url.indexOf("/api/method/uploadfile") === 0) { res.statusCode = 404; res.end("{}"); }
+		else if (/multipart/.test(req.headers["content-type"] || "")) {
 			res.end(JSON.stringify({ message: { name: "f1", file_url: "/private/files/up.pdf" } }));
 		} else if (req.url.indexOf("/api/method/upload_file") === 0) {
 			got.form = body.toString(); res.end(JSON.stringify({ message: { name: "f2", file_url: "/private/files/up.pdf" } }));

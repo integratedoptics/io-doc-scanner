@@ -21,6 +21,15 @@ function world(opts) {
 		log.push(rec);
 		function ok(data, status) { return Promise.resolve({ status: status || 200, body: JSON.stringify({ data: data }) }); }
 		function err(msg) { return Promise.resolve({ status: 417, body: JSON.stringify({ exc_type: "ValidationError", _server_messages: JSON.stringify([JSON.stringify({ message: msg })]) }) }); }
+		if (method === "POST" && /\/api\/method\/uploadfile$/.test(url)) {
+			if (opts.noUploadfile) return Promise.resolve({ status: opts.noUploadfile, body: JSON.stringify({ exc: "AttributeError" }) });
+			if (opts.uploadFails) return err("upload refused");
+			var q = {}; String(body).split("&").forEach(function (kv) { var i = kv.indexOf("="); q[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1)); });
+			rec.form = q;
+			if (opts.dup) return Promise.resolve({ status: 200, body: JSON.stringify({ message: null }) });
+			return Promise.resolve({ status: 200, body: JSON.stringify({ message: { name: "abc123", file_url: opts.public ? "/files/ILTE PO-08385.pdf" : "/private/files/PO 08286 ą.pdf" } }) });
+		}
+		if (method === "GET" && /\/api\/resource\/File\?/.test(url)) return ok(opts.dup ? [{ name: "abc123" }] : []);
 		if (method === "POST" && /\/api\/method\/upload_file$/.test(url)) {
 			if (rec.raw) {   /* step 1: the multipart upload */
 				if (opts.uploadFails) return err("upload refused");
@@ -58,17 +67,31 @@ function world(opts) {
 (async function () {
 	var t = world({}), r = await t.E.attachFile("Accounts Document", "ACC-1", DATA, "PO-08286.pdf", "file");
 	check("good case: created, with the file address", r.state === "created" && r.url === "/private/files/PO 08286 ą.pdf", JSON.stringify(r));
-	var ups = t.log.filter(function (x) { return x.method === "POST"; });
-	var mp = ups[0], text = mp.raw.toString("binary");
-	check("step 1 is a multipart upload_file with the real file bytes, private, nothing attached yet",
-		/\/api\/method\/upload_file$/.test(mp.url) && /^multipart\/form-data; boundary=/.test(mp.headers["Content-Type"]) &&
-		mp.headers["X-CS-Body-Encoding"] === "base64" && text.indexOf(Buffer.from(B64, "base64").toString("binary")) > 0 &&
-		/name="file"; filename="PO-08286.pdf"/.test(text) && /name="is_private"\r\n\r\n1\r\n/.test(text) && !/name="docname"/.test(text), text.slice(0, 300));
-	var lk = ups[1];
-	check("step 2 attaches it with doctype, docname, file_url, filename, is_private",
+	var up = t.log.filter(function (x) { return x.method === "POST"; });
+	var fm = up[0].form;
+	check("one uploadfile call (form post) with from_form, doctype, docname, filename, filedata, is_private",
+		up.length === 1 && /\/api\/method\/uploadfile$/.test(up[0].url) && fm.from_form === "1" && fm.doctype === "Accounts Document" &&
+		fm.docname === "ACC-1" && fm.filename === "PO-08286.pdf" && fm.filedata === B64 && fm.is_private === "1" && fm.docfield === "file",
+		JSON.stringify(fm && Object.keys(fm)));
+	check("an ordinary form body, not multipart", !up[0].raw && up[0].headers["Content-Type"] === "application/x-www-form-urlencoded");
+
+	/* the server has no uploadfile (Frappe v16): multipart upload_file, then attach */
+	var tf = world({ noUploadfile: 404 }); var rf = await tf.E.attachFile("Accounts Document", "ACC-1", DATA, "PO-08286.pdf", "file");
+	var ups = tf.log.filter(function (x) { return x.method === "POST" && /upload_file$/.test(x.url); });
+	var mp = ups[0], text = mp.raw.toString("binary"), lk = ups[1];
+	check("fallback: created after upload_file", rf.state === "created" && rf.url === "/private/files/PO 08286 ą.pdf", JSON.stringify(rf));
+	check("fallback step 1 is a multipart upload with the real file bytes, private, nothing attached yet",
+		/^multipart\/form-data; boundary=/.test(mp.headers["Content-Type"]) && mp.headers["X-CS-Body-Encoding"] === "base64" &&
+		text.indexOf(Buffer.from(B64, "base64").toString("binary")) > 0 && /name="file"; filename="PO-08286.pdf"/.test(text) &&
+		/name="is_private"\r\n\r\n1\r\n/.test(text) && !/name="docname"/.test(text), text.slice(0, 300));
+	check("fallback step 2 attaches it with doctype, docname, file_url, filename, is_private",
 		!!lk && lk.form.doctype === "Accounts Document" && lk.form.docname === "ACC-1" && lk.form.file_url === "/private/files/PO 08286 ą.pdf" &&
 		lk.form.filename === "PO-08286.pdf" && lk.form.is_private === "1", JSON.stringify(lk && lk.form));
-	check("the file is uploaded before it is attached", t.log.indexOf(mp) < t.log.indexOf(lk));
+	check("fallback: upload before attach", tf.log.indexOf(mp) < tf.log.indexOf(lk));
+	rf = await world({ noUploadfile: 500 }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
+	check("a server error from uploadfile is reported, not retried as another method", rf.state === "error" && /rejected the upload/i.test(rf.errors[0].message) || rf.state === "error", JSON.stringify(rf));
+	rf = await world({ dup: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
+	check("same file already attached (uploadfile answers nothing): the existing record is used", rf.state === "created" && /^\/private\/files\//.test(rf.url), JSON.stringify(rf));
 	var get = t.log.filter(function (x) { return x.method === "GET" && /private/.test(x.url); })[0];
 	check("the address is requested from the server (first bytes only, URL-encoded)", !!get && get.headers.Range === "bytes=0-15" &&
 		get.url === "https://erp.example.com/private/files/PO%2008286%20%C4%85.pdf", get && get.url);
@@ -83,9 +106,9 @@ function world(opts) {
 	check("stored size different from what was sent is reported (e.g. text instead of the file)", r.state === "error" && /stored 96 bytes/.test(r.errors[0].message), JSON.stringify(r));
 	r = await world({ uploadFails: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
 	check("a refused upload is reported", r.state === "error" && /upload refused/.test(r.errors[0].message), JSON.stringify(r));
-	r = await world({ noName: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
+	r = await world({ noUploadfile: 404, noName: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
 	check("an upload answered without a stored file is reported", r.state === "error" && /did not say where/.test(r.errors[0].message), JSON.stringify(r));
-	t = world({ linkFails: true }); r = await t.E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
+	t = world({ noUploadfile: 404, linkFails: true }); r = await t.E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
 	check("uploaded but not attachable: reported with the address, field not written",
 		r.state === "error" && /was uploaded \(\/private\/files\/PO 08286 ą\.pdf\), but ERPNext could not attach it/.test(r.errors[0].message) &&
 		/no permission to attach/.test(r.errors[0].message) && !t.log.some(function (x) { return x.method === "PUT"; }), JSON.stringify(r));
