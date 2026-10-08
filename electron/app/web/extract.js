@@ -240,8 +240,43 @@ function extractFromFile(dataUrl, settings, hint, text) {
 	catch (e) { return Promise.reject(e); }
 }
 
+/* A plain text completion, used by the business-card clean-up and the LinkedIn lookup.
+   cfg = { prov: "anthropic" | "openai", url, model, key, workspace }. Resolves the model's text; rejects with the
+   server's own message when the request is refused (a 400 about the workspace, a bad key, an unknown model …),
+   instead of treating the error body as an empty answer. */
+function complete(cfg, prompt, maxTokens) {
+	var url, body, headers = { "Content-Type": "application/json" };
+	if (!cfg || !cfg.key) return Promise.reject(new Error("There is no API key."));
+	if (cfg.prov === "anthropic") {
+		url = cfg.url && cfg.url.indexOf("anthropic") >= 0 ? cfg.url : API_URL;
+		headers["x-api-key"] = cfg.key;
+		headers["anthropic-version"] = ANTHROPIC_VERSION;
+		if (cfg.workspace) headers["anthropic-workspace-id"] = String(cfg.workspace).trim();
+		body = { model: cfg.model || MODEL, max_tokens: maxTokens || 1500,
+			messages: [{ role: "user", content: prompt }] };
+	} else {
+		url = cfg.url || "https://api.openai.com/v1/chat/completions";
+		headers["Authorization"] = "Bearer " + cfg.key;
+		body = { model: cfg.model || "gpt-4o-mini", temperature: 0, response_format: { type: "json_object" },
+			messages: [{ role: "user", content: prompt }] };
+	}
+	return window.CS_NET.request("POST", url, headers, JSON.stringify(body), 60).then(function (r) {
+		var j = null;
+		try { j = JSON.parse(r.body || "{}"); } catch (e) { j = null; }
+		if (r.status < 200 || r.status >= 300) {
+			var m = j && j.error && (j.error.message || (typeof j.error === "string" ? j.error : "")) || "";
+			throw new Error("The AI request failed (" + r.status + ")" + (m ? ": " + m : "."));
+		}
+		var txt = "";
+		if (j && j.choices && j.choices[0] && j.choices[0].message) txt = j.choices[0].message.content || "";
+		else if (j && j.content && j.content[0]) txt = j.content[0].text || "";
+		else if (j && j.error) throw new Error("The AI request failed: " + (j.error.message || JSON.stringify(j.error)));
+		return String(txt);
+	});
+}
+
 return {
-	MODEL: MODEL, DOC_TYPES: DOC_TYPES, ready: ready,
+	MODEL: MODEL, DOC_TYPES: DOC_TYPES, ready: ready, complete: complete,
 	extractFields: extractFields, extractFromFile: extractFromFile,
 	_internals: { stripFences: stripFences, SCHEMA_PROMPT: SCHEMA_PROMPT, buildContent: buildContent }
 };

@@ -432,7 +432,7 @@ window.onScan = function (r) {
 	if (!f.email && !f.mobile_no && !f.phone) w.push("No email or phone number found.");
 	warnBox(w);
 	toast(r.lines + " lines recognised", "good");
-	if (S.ai && S.key) aiCleanup(true);
+	if (S.ai && aiConfig().key) aiCleanup(true);
 };
 window.onScanCancelled = function () {
 	busy($("btn-cam"), false, "Take a photo of a card");
@@ -453,8 +453,17 @@ function busy(btn, on, label) {
 }
 
 // ------------------------------------------------------------------ AI clean
+/* What the clean-up talks to. With Anthropic selected and no key typed in this block, it uses the
+   "Document field extraction" key and Workspace ID, so one key does both. */
+function aiConfig() {
+	var anth = S.prov === "anthropic";
+	return { prov: anth ? "anthropic" : "openai", url: S.url, model: S.model,
+		key: S.key || (anth ? S.extract_key : "") || "",
+		workspace: anth ? (S.extract_workspace || "") : "" };
+}
+
 function aiCleanup(silent) {
-	if (!S.ai || !S.key) { if (!silent) toast("Switch on AI cleanup and add an API key in Settings.", "err"); return; }
+	if (!S.ai || !aiConfig().key) { if (!silent) toast("Switch on AI cleanup and add an API key in Settings.", "err"); return; }
 	var cur = readForm();
 	var raw = cur.raw_text || "";
 	if (!raw) { if (!silent) toast("Nothing to clean up.", "err"); return; }
@@ -479,31 +488,13 @@ function aiCleanup(silent) {
 	prompt += "\n\nCard text:\n" + raw
 		+ "\n\nCurrent rule-based guess (correct it):\n" + JSON.stringify(cur, null, 0);
 
-	var url, headers, body;
-	if (S.prov === "anthropic") {
-		url = S.url && S.url.indexOf("anthropic") >= 0 ? S.url : "https://api.anthropic.com/v1/messages";
-		headers = { "x-api-key": S.key, "anthropic-version": "2023-06-01" };
-		body = JSON.stringify({ model: S.model || "claude-3-5-haiku-latest", max_tokens: 900,
-			messages: [{ role: "user", content: prompt }] });
-	} else {
-		url = S.url || "https://api.openai.com/v1/chat/completions";
-		headers = { Authorization: "Bearer " + S.key };
-		body = JSON.stringify({ model: S.model || "gpt-4o-mini", temperature: 0,
-			response_format: { type: "json_object" },
-			messages: [{ role: "user", content: prompt }] });
-	}
-
-	window.CS_NET.raw(url, headers, body, 45, function (resp) {
+	window.CS_EXTRACT.complete(aiConfig(), prompt, 1500).then(function (txt) {
 		busy($("btn-ai"), false, "Clean up with AI");
-		if (typeof resp === "string" && resp.indexOf("ERR:") === 0) { toast(resp.slice(4), "err"); return; }
-		var txt = "";
-		try {
-			var j = JSON.parse(resp);
-			if (j.choices && j.choices[0]) txt = j.choices[0].message.content;
-			else if (j.content && j.content[0]) txt = j.content[0].text;
-		} catch (e) { toast("Unexpected answer from the model.", "err"); return; }
 		var m = txt && txt.match(/\{[\s\S]*\}/);
-		if (!m) { toast("The model returned no JSON.", "err"); return; }
+		if (!m) {
+			toast("The model returned no JSON" + (txt ? ": \u201c" + txt.replace(/\s+/g, " ").slice(0, 120) + "\u201d" : " (empty answer).") , "err");
+			return;
+		}
 		var f;
 		try { f = JSON.parse(m[0]); } catch (e) { toast("The model returned broken JSON.", "err"); return; }
 		var changed = 0, liFound = false;
@@ -523,6 +514,9 @@ function aiCleanup(silent) {
 			? "AI cleanup adjusted " + changed + " field(s)" + (liFound ? ", including a LinkedIn suggestion." : ".")
 			: "AI cleanup found nothing to fix.", "good");
 		if (S.norm !== false) applyNormalisation(true);
+	}, function (err) {
+		busy($("btn-ai"), false, "Clean up with AI");
+		toast((err && err.message) || "The AI request failed.", "err");
 	});
 }
 

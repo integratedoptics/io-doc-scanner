@@ -90,6 +90,26 @@ function check(l, c) { if (!c) fails++; console.log((c ? "ok   " : "FAIL ") + l)
 	check("a reply cut off at the token limit is named as such", !!e6 && /cut off/.test(e6.message));
 	check("the reply limit is large enough for a long form", sent.body.max_tokens >= 4096);
 
+	/* plain completion for the card clean-up / LinkedIn lookup */
+	reply = { status: 200, body: JSON.stringify({ content: [{ text: "{\"first_name\":\"Jane\"}" }] }) };
+	var ct = await X.complete({ prov: "anthropic", key: "sk-ant-x", workspace: " wrkspc_1 ", model: "" }, "clean this", 1500);
+	check("complete (Anthropic): text comes back, default model, key, version and workspace headers",
+		ct === "{\"first_name\":\"Jane\"}" && sent.url === "https://api.anthropic.com/v1/messages" && sent.body.model === "claude-sonnet-5" &&
+		sent.headers["x-api-key"] === "sk-ant-x" && sent.headers["anthropic-workspace-id"] === "wrkspc_1" && !("temperature" in sent.body));
+	await X.complete({ prov: "anthropic", key: "k", url: "https://example.com/v1/chat/completions" }, "p");
+	check("complete: a non-Anthropic address in the endpoint box is ignored for Anthropic", sent.url === "https://api.anthropic.com/v1/messages");
+	await X.complete({ prov: "anthropic", key: "k" }, "p");
+	check("complete: no workspace header when none is set", !("anthropic-workspace-id" in sent.headers));
+	reply = { status: 200, body: JSON.stringify({ choices: [{ message: { content: "{\"a\":\"b\"}" } }] }) };
+	var co = await X.complete({ prov: "openai", key: "sk-o", model: "" }, "p");
+	check("complete (OpenAI-style): reads choices[0].message.content, Bearer key, json mode", co === "{\"a\":\"b\"}" &&
+		sent.url === "https://api.openai.com/v1/chat/completions" && sent.headers.Authorization === "Bearer sk-o" && sent.body.response_format.type === "json_object");
+	reply = { status: 400, body: JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header" } }) };
+	var e7 = null; try { await X.complete({ prov: "anthropic", key: "k" }, "p"); } catch (x) { e7 = x; }
+	check("complete: a refused request shows the server's message instead of an empty answer", !!e7 && /failed \(400\)/.test(e7.message) && /workspace/.test(e7.message), e7 && e7.message);
+	var e8 = null; try { await X.complete({ prov: "anthropic", key: "" }, "p"); } catch (x) { e8 = x; }
+	check("complete: no key is reported", !!e8 && /no API key/.test(e8.message));
+
 	console.log(fails ? fails + " FAILED" : "all passed");
 	process.exit(fails ? 1 : 0);
 })();

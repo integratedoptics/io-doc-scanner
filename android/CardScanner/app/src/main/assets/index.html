@@ -487,6 +487,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <div class="f"><label>Endpoint</label><input id="s-url" autocapitalize="off" spellcheck="false"></div>
       <div class="f"><label>Model</label><input id="s-model" autocapitalize="off" spellcheck="false"></div>
       <div class="f"><label>API key</label><input id="s-key" type="password" autocapitalize="off" spellcheck="false"></div>
+      <p class="hint">With Provider set to Anthropic you can leave Endpoint, Model and API key empty: the cleanup then uses the Anthropic key, Workspace ID and model from “Document field extraction”.</p>
       <p class="hint">The key is stored only on this phone. When AI cleanup is on, the recognised text of a card is sent to the endpoint you configure so it can repair typical OCR mistakes (l/i, 0/O, missing dots in domains). Leave it off to stay completely offline.</p>
       <p class="hint">The LinkedIn lookup asks the same model for the person's public profile URL. Models cannot browse LinkedIn, so a returned address is a suggestion: it is marked as unverified and you should tap it to check before exporting.</p>
       <button class="b sec" id="btn-save-set" style="margin-top:10px">Save settings</button>
