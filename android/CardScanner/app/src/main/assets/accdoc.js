@@ -292,7 +292,7 @@ function suggestParents(fields, opts) {
 		.catch(function () { return erp().getList(DOCTYPE, null, base, 300); })
 		.then(function (rows) {
 			/* a child record (parent_document set) is never a parent */
-			rows = rows.filter(function (r) { return !r.parent_document; });
+			rows = rows.filter(function (r) { return !r.parent_document || r.parent_document === r.name; });
 			var scored = rows.map(function (r) {
 				var reasons = [], score = 0, hits = 0;
 				REF_COLUMNS.forEach(function (c) {
@@ -422,7 +422,8 @@ function createChild(section, parentName, fields, fileDataUrl, fileName) {
 	var attachment = section === "attachment";
 	return e.fetchDoc(DOCTYPE, parentName).then(function (parent) {
 		if (!parent) throw new Error("There is no Accounts Document called \u201c" + parentName + "\u201d.");
-		if (parent.parent_document) {
+		/* a parent may name ITSELF in parent_document (ERPNext fills it in on a parent); only a different name makes it a child */
+		if (parent.parent_document && parent.parent_document !== parentName) {
 			throw new Error(parentName + " is itself a child of " + parent.parent_document +
 				" — pick that parent record instead.");
 		}

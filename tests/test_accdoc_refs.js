@@ -83,6 +83,9 @@ rows = [
 	failUpdate = false;
 	var e2 = null; try { await ACC.createChild("cd", "ACC-C", { documentNo: "N" }, "x", "y"); } catch (x) { e2 = x; }
 	check("a child cannot be chosen as a parent", !!e2 && /child of ACC-1/.test(e2.message), e2 && e2.message);
+	docs["ACC-SELF"] = { name: "ACC-SELF", naming_series: "PURCHASE-", is_parent_document: 1, parent_document: "ACC-SELF" };
+	var self = await ACC.createChild("cd", "ACC-SELF", { documentNo: "26LTVA1", documentDate: "2026-10-05", supplierName: "Muitinės departamentas" }, "x", "cd.pdf");
+	check("a parent that names ITSELF in parent_document is still a parent (PURCHASE-07469 case)", !!self && !!self.name && self.state !== "error", JSON.stringify(self));
 	var e3 = null; try { await ACC.createChild("cd", "NOPE", { documentNo: "N" }, "x", "y"); } catch (x) { e3 = x; }
 	check("an unknown parent is reported", !!e3 && /NOPE/.test(e3.message));
 

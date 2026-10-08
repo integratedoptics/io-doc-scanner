@@ -81,6 +81,14 @@ function check(l, c) { if (!c) fails++; console.log((c ? "ok   " : "FAIL ") + l)
 	reply = { status: 200, body: JSON.stringify({ content: [{ text: "Sorry, I can't" }] }) };
 	var e5 = null; try { await X.extractFields("x", { key: "k" }, ""); } catch (e) { e5 = e; }
 	check("non-JSON reply is reported", !!e5 && /JSON/.test(e5.message));
+	check("non-JSON reply: the message shows how it began", /Sorry, I can/.test(e5.message));
+	reply = { status: 200, body: JSON.stringify({ content: [{ text: "Here are the fields:\n{\"document_no\":\"26LTVA10002C3B64R0\",\"supplier_name\":\"Muitinės departamentas\"}\nLet me know." }] }) };
+	var rp = await X.extractFields("x", { key: "k" }, "customs_declaration");
+	check("JSON with a sentence before and after it is still read", rp.fields.document_no === "26LTVA10002C3B64R0");
+	reply = { status: 200, body: JSON.stringify({ stop_reason: "max_tokens", content: [{ text: "{\"document_no\":\"26LT" }] }) };
+	var e6 = null; try { await X.extractFields("x", { key: "k" }, ""); } catch (x) { e6 = x; }
+	check("a reply cut off at the token limit is named as such", !!e6 && /cut off/.test(e6.message));
+	check("the reply limit is large enough for a long form", sent.body.max_tokens >= 4096);
 
 	console.log(fails ? fails + " FAILED" : "all passed");
 	process.exit(fails ? 1 : 0);
