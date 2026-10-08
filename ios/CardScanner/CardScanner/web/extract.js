@@ -171,7 +171,6 @@ function send(content, settings) {
 	var body = JSON.stringify({
 		model: MODEL,
 		max_tokens: 1024,
-		temperature: 0,
 		messages: [{ role: "user", content: content }]
 	});
 	var headers = {
