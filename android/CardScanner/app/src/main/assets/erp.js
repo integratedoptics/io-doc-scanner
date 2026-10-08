@@ -815,6 +815,26 @@ function addressDoc(f, link, territory) {
 
 /* ------------------------------------------------------------- attachments */
 
+/* Every scan is kept private: its address must start with /private/files/. When ERPNext has put a freshly
+   created File into the public folder anyway (address /files/…, which then cannot be opened), the File is
+   switched to private — the same thing the lock icon does in ERPNext: the server moves the file and rewrites
+   the address, including the one in the document's Attach field. Resolves the File record as it is afterwards
+   ({ name, file_url, file_size, … }) or rejects with a message. */
+function ensurePrivate(fileName, fdoc) {
+	if (fdoc && /^\/private\/files\//.test(fdoc.file_url || "")) return Promise.resolve(fdoc);
+	if (!fdoc || !fdoc.file_url) return Promise.resolve(fdoc);
+	return updateDoc("File", fileName, { is_private: 1 }).then(function () {
+		return fetchDoc("File", fileName);
+	}).then(function (again) {
+		if (again && /^\/private\/files\//.test(again.file_url || "")) return again;
+		var e = new Error("ERPNext stored the file in the public folder (" + fdoc.file_url + ") and did not move it to the private one.");
+		throw e;
+	}, function (err) {
+		var why = err && err.errors && err.errors[0] && err.errors[0].message ? err.errors[0].message : (err && err.message) || "unknown error";
+		throw new Error("ERPNext stored the file in the public folder (" + fdoc.file_url + ") and refused to make it private: " + why);
+	});
+}
+
 /* Uploads the photo of the card and attaches it to a document.
 
    /api/method/upload_file wants a multipart body, which the native HTTP bridge
@@ -839,7 +859,13 @@ function attachImage(doctype, name, dataUrl, label) {
 		attached_to_name: name,
 		content: base64
 	}, []).then(function (fileName) {
-		return { state: "created", name: fileName };
+		return fetchDoc("File", fileName).then(function (fdoc) {
+			return ensurePrivate(fileName, fdoc);
+		}).then(function (fdoc) {
+			return { state: "created", name: fileName, url: fdoc && fdoc.file_url || "" };
+		}, function (e) {
+			return { state: "error", name: fileName, errors: [{ field: "", message: e.message || String(e) }] };
+		});
 	}).catch(function (e) {
 		return { state: "error",
 			errors: e.errors || [{ field: "", message: e.message || String(e) }] };
@@ -897,6 +923,11 @@ function attachFile(doctype, name, dataUrl, filename, fieldname) {
 		content: base64
 	}, []).then(function (fileName) {
 		return fetchDoc("File", fileName).then(function (fdoc) {
+			return ensurePrivate(fileName, fdoc).then(null, function (e) {
+				return { _failed: e.message || String(e), file_url: fdoc && fdoc.file_url || "" };
+			});
+		}).then(function (fdoc) {
+			if (fdoc && fdoc._failed) return fail(fdoc._failed, { name: fileName, url: fdoc.file_url });
 			var url = fdoc && fdoc.file_url ? fdoc.file_url : "";
 			var size = fdoc && fdoc.file_size ? Number(fdoc.file_size) : 0;
 			var info = { name: fileName, url: url, size: size };

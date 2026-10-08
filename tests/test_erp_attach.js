@@ -10,7 +10,7 @@ var B64 = Buffer.from("%PDF-1.4 hello world, this is a test pdf body of some len
 var DATA = "data:application/pdf;base64," + B64, BYTES = Buffer.from(B64, "base64").length;
 
 function world(opts) {
-	var log = [];
+	var log = [], state = { madePrivate: false };
 	var w = { window: {}, console: console };
 	w.window.CS_NET = { request: function (method, url, headers, body) {
 		var rec = { method: method, url: url, headers: headers, body: body ? JSON.parse(body) : null };
@@ -18,10 +18,15 @@ function world(opts) {
 		function ok(data, status) { return Promise.resolve({ status: status || 200, body: JSON.stringify({ data: data }) }); }
 		if (method === "POST" && /\/api\/resource\/File$/.test(url)) return ok({ name: "abc123" });
 		if (method === "GET" && /\/api\/resource\/File\/abc123$/.test(url)) {
+			if (opts.public && !state.madePrivate) return ok({ name: "abc123", file_url: "/files/ILTE PO-08385.pdf", file_size: BYTES, is_private: 0 });
 			if (opts.noUrl) return ok({ name: "abc123", file_url: "", file_size: 0 });
 			return ok({ name: "abc123", file_url: "/private/files/PO 08286 ą.pdf", file_size: opts.size === undefined ? BYTES : opts.size });
 		}
 		if (method === "GET" && /\/private\/files\//.test(url)) return Promise.resolve({ status: opts.serve || 206, body: "%PDF-1.4 hello" });
+		if (method === "PUT" && /\/api\/resource\/File\/abc123$/.test(url)) {
+			if (opts.noMove) return Promise.resolve({ status: 417, body: JSON.stringify({ exc_type: "ValidationError", _server_messages: JSON.stringify([JSON.stringify({ message: "cannot move" })]) }) });
+			state.madePrivate = true; return ok({ name: "abc123" });
+		}
 		if (method === "PUT") {
 			if (opts.putFails) return Promise.resolve({ status: 417, body: JSON.stringify({ exc_type: "ValidationError", _server_messages: JSON.stringify([JSON.stringify({ message: "Field is read only" })]) }) });
 			return ok({ name: "ACC-1" });
@@ -30,7 +35,7 @@ function world(opts) {
 	} };
 	vm.createContext(w); vm.runInContext(fs.readFileSync(file, "utf8"), w);
 	w.window.CS_ERP.configure({ erp_url: "https://erp.example.com", erp_mode: "token", erp_key: "k", erp_secret: "s" });
-	return { E: w.window.CS_ERP.shared, log: log };
+	return { E: w.window.CS_ERP.shared, I: w.window.CS_ERP._internals, log: log };
 }
 
 (async function () {
@@ -59,6 +64,17 @@ function world(opts) {
 	check("no field: attached only, no field write", r.state === "created" && !t.log.some(function (x) { return x.method === "PUT"; }));
 	r = await t.E.attachFile("Accounts Document", "ACC-1", "", "a.pdf", "file");
 	check("nothing to send -> off", r.state === "off");
+
+	/* ERPNext put the file in the PUBLIC folder: the app makes it private, and the field gets the private address */
+	t = world({ public: true }); r = await t.E.attachFile("Accounts Document", "ACC-1", DATA, "ILTE PO-08385.pdf", "file");
+	var mv = t.log.filter(function (x) { return x.method === "PUT" && /File\/abc123/.test(x.url); })[0];
+	var fput = t.log.filter(function (x) { return x.method === "PUT" && /Accounts%20Document/.test(x.url); })[0];
+	check("public address -> the File is switched to private", !!mv && mv.body.is_private === 1, JSON.stringify(t.log.map(function (x) { return x.method + " " + x.url; })));
+	check("...and the Attach field gets /private/files/…", r.state === "created" && /^\/private\/files\//.test(r.url) && !!fput && /^\/private\/files\//.test(fput.body.file), JSON.stringify([r, fput && fput.body]));
+	r = await world({ public: true, noMove: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
+	check("public address that cannot be moved is reported", r.state === "error" && /public folder \(\/files\/ILTE PO-08385\.pdf\) and refused to make it private: cannot move/.test(r.errors[0].message), JSON.stringify(r));
+	t = world({ public: true }); r = await t.I.attachImage("Contact", "C-1", DATA, "Jane Doe");
+	check("business-card photo is made private too", r.state === "created" && /^\/private\/files\//.test(r.url), JSON.stringify(r));
 
 	console.log(fails ? fails + " FAILED" : "all passed");
 	process.exit(fails ? 1 : 0);
