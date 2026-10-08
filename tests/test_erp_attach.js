@@ -11,12 +11,29 @@ var DATA = "data:application/pdf;base64," + B64, BYTES = Buffer.from(B64, "base6
 
 function world(opts) {
 	var log = [], state = { madePrivate: false };
-	var w = { window: {}, console: console };
+	var w = { window: {}, console: console, atob: function (x) { return Buffer.from(x, "base64").toString("binary"); },
+		btoa: function (x) { return Buffer.from(x, "binary").toString("base64"); } };
 	w.window.CS_NET = { request: function (method, url, headers, body) {
-		var rec = { method: method, url: url, headers: headers, body: body ? JSON.parse(body) : null };
+		var rec = { method: method, url: url, headers: headers, body: body };
+		var ct = headers && headers["Content-Type"] || "";
+		if (/^multipart\//.test(ct) && headers["X-CS-Body-Encoding"] === "base64") rec.raw = Buffer.from(body, "base64");
+		else if (/json/.test(ct) && body) rec.body = JSON.parse(body);
 		log.push(rec);
 		function ok(data, status) { return Promise.resolve({ status: status || 200, body: JSON.stringify({ data: data }) }); }
-		if (method === "POST" && /\/api\/resource\/File$/.test(url)) return ok({ name: "abc123" });
+		function err(msg) { return Promise.resolve({ status: 417, body: JSON.stringify({ exc_type: "ValidationError", _server_messages: JSON.stringify([JSON.stringify({ message: msg })]) }) }); }
+		if (method === "POST" && /\/api\/method\/upload_file$/.test(url)) {
+			if (rec.raw) {   /* step 1: the multipart upload */
+				if (opts.uploadFails) return err("upload refused");
+				if (opts.noName) return Promise.resolve({ status: 200, body: JSON.stringify({ message: {} }) });
+				return Promise.resolve({ status: 200, body: JSON.stringify({ message: { name: "abc123",
+					file_url: opts.public ? "/files/ILTE PO-08385.pdf" : "/private/files/PO 08286 ą.pdf" } }) });
+			}
+			/* step 2: form post with file_url */
+			if (opts.linkFails) return err("no permission to attach");
+			var p = {}; String(body).split("&").forEach(function (kv) { var i = kv.indexOf("="); p[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1)); });
+			rec.form = p;
+			return Promise.resolve({ status: 200, body: JSON.stringify({ message: { name: "link1", file_url: p.file_url } }) });
+		}
 		if (method === "GET" && /\/api\/resource\/File\/abc123$/.test(url)) {
 			if (opts.public && !state.madePrivate) return ok({ name: "abc123", file_url: "/files/ILTE PO-08385.pdf", file_size: BYTES, is_private: 0 });
 			if (opts.noUrl) return ok({ name: "abc123", file_url: "", file_size: 0 });
@@ -24,11 +41,11 @@ function world(opts) {
 		}
 		if (method === "GET" && /\/private\/files\//.test(url)) return Promise.resolve({ status: opts.serve || 206, body: "%PDF-1.4 hello" });
 		if (method === "PUT" && /\/api\/resource\/File\/abc123$/.test(url)) {
-			if (opts.noMove) return Promise.resolve({ status: 417, body: JSON.stringify({ exc_type: "ValidationError", _server_messages: JSON.stringify([JSON.stringify({ message: "cannot move" })]) }) });
+			if (opts.noMove) return err("cannot move");
 			state.madePrivate = true; return ok({ name: "abc123" });
 		}
 		if (method === "PUT") {
-			if (opts.putFails) return Promise.resolve({ status: 417, body: JSON.stringify({ exc_type: "ValidationError", _server_messages: JSON.stringify([JSON.stringify({ message: "Field is read only" })]) }) });
+			if (opts.putFails) return err("Field is read only");
 			return ok({ name: "ACC-1" });
 		}
 		return Promise.resolve({ status: 404, body: "{}" });
@@ -41,9 +58,17 @@ function world(opts) {
 (async function () {
 	var t = world({}), r = await t.E.attachFile("Accounts Document", "ACC-1", DATA, "PO-08286.pdf", "file");
 	check("good case: created, with the file address", r.state === "created" && r.url === "/private/files/PO 08286 ą.pdf", JSON.stringify(r));
-	var post = t.log.filter(function (x) { return x.method === "POST"; })[0].body;
-	check("the file is sent decoded-by-server, private, attached to the record and the field", post.decode === 1 && post.is_private === 1 &&
-		post.attached_to_doctype === "Accounts Document" && post.attached_to_name === "ACC-1" && post.attached_to_field === "file" && post.content === B64);
+	var ups = t.log.filter(function (x) { return x.method === "POST"; });
+	var mp = ups[0], text = mp.raw.toString("binary");
+	check("step 1 is a multipart upload_file with the real file bytes, private, nothing attached yet",
+		/\/api\/method\/upload_file$/.test(mp.url) && /^multipart\/form-data; boundary=/.test(mp.headers["Content-Type"]) &&
+		mp.headers["X-CS-Body-Encoding"] === "base64" && text.indexOf(Buffer.from(B64, "base64").toString("binary")) > 0 &&
+		/name="file"; filename="PO-08286.pdf"/.test(text) && /name="is_private"\r\n\r\n1\r\n/.test(text) && !/name="docname"/.test(text), text.slice(0, 300));
+	var lk = ups[1];
+	check("step 2 attaches it with doctype, docname, file_url, filename, is_private",
+		!!lk && lk.form.doctype === "Accounts Document" && lk.form.docname === "ACC-1" && lk.form.file_url === "/private/files/PO 08286 ą.pdf" &&
+		lk.form.filename === "PO-08286.pdf" && lk.form.is_private === "1", JSON.stringify(lk && lk.form));
+	check("the file is uploaded before it is attached", t.log.indexOf(mp) < t.log.indexOf(lk));
 	var get = t.log.filter(function (x) { return x.method === "GET" && /private/.test(x.url); })[0];
 	check("the address is requested from the server (first bytes only, URL-encoded)", !!get && get.headers.Range === "bytes=0-15" &&
 		get.url === "https://erp.example.com/private/files/PO%2008286%20%C4%85.pdf", get && get.url);
@@ -56,8 +81,14 @@ function world(opts) {
 	check("file refused (403) is reported", r.state === "error" && /refuses to serve it \(403/.test(r.errors[0].message), JSON.stringify(r));
 	r = await world({ size: 96 }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
 	check("stored size different from what was sent is reported (e.g. text instead of the file)", r.state === "error" && /stored 96 bytes/.test(r.errors[0].message), JSON.stringify(r));
-	r = await world({ noUrl: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
-	check("attachment record without a file address is reported", r.state === "error" && /no file address/.test(r.errors[0].message), JSON.stringify(r));
+	r = await world({ uploadFails: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
+	check("a refused upload is reported", r.state === "error" && /upload refused/.test(r.errors[0].message), JSON.stringify(r));
+	r = await world({ noName: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
+	check("an upload answered without a stored file is reported", r.state === "error" && /did not say where/.test(r.errors[0].message), JSON.stringify(r));
+	t = world({ linkFails: true }); r = await t.E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
+	check("uploaded but not attachable: reported with the address, field not written",
+		r.state === "error" && /was uploaded \(\/private\/files\/PO 08286 ą\.pdf\), but ERPNext could not attach it/.test(r.errors[0].message) &&
+		/no permission to attach/.test(r.errors[0].message) && !t.log.some(function (x) { return x.method === "PUT"; }), JSON.stringify(r));
 	r = await world({ putFails: true }).E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "file");
 	check("field write refused is reported, not swallowed", r.state === "error" && /could not be written into the .file. field/.test(r.errors[0].message) && /read only/.test(r.errors[0].message), JSON.stringify(r));
 	t = world({}); r = await t.E.attachFile("Accounts Document", "ACC-1", DATA, "a.pdf", "");

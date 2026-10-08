@@ -835,13 +835,145 @@ function ensurePrivate(fileName, fdoc) {
 	});
 }
 
-/* Uploads the photo of the card and attaches it to a document.
+/* ----------------------------------------------------------- file upload
+   Two calls to Frappe's own /api/method/upload_file — the endpoint ERPNext's web page uses:
 
-   /api/method/upload_file wants a multipart body, which the native HTTP bridge
-   cannot build, so this goes through the File doctype instead: Frappe's
-   File.get_content() base64-decodes `content` whenever `decode` is set, and
-   splits a data: prefix off by itself. The file is private, because a business
-   card is personal data. */
+     1. upload: multipart/form-data with the file and is_private=1. The server stores the file and answers
+        with its address (/private/files/<name>). Nothing is attached yet.
+     2. attach: a plain form post with doctype, docname, file_url, filename and is_private=1, which creates
+        the File record that links the stored file to the document.
+
+   The address is then written into the Attach field of the document by the caller.
+
+   The native HTTP bridges carry text only, so the multipart body of step 1 is assembled here as bytes,
+   sent as base64 text, and flagged with the X-CS-Body-Encoding header; the native side (Android, iOS,
+   the desktop shell) turns it back into the raw bytes before it goes on the wire and removes the header. */
+
+function utf8Bytes(str) {
+	var bin = unescape(encodeURIComponent(String(str)));
+	var out = new Uint8Array(bin.length);
+	for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+	return out;
+}
+
+function base64Bytes(b64) {
+	var bin = atob(b64);
+	var out = new Uint8Array(bin.length);
+	for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+	return out;
+}
+
+function bytesBase64(bytes) {
+	var s = "";
+	for (var i = 0; i < bytes.length; i += 0x8000) {
+		s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+	}
+	return btoa(s);
+}
+
+function guessMime(filename, dataUrl) {
+	var m = /^data:([^;,]+)[;,]/.exec(String(dataUrl || ""));
+	if (m && m[1] && m[1] !== "application/octet-stream") return m[1];
+	var ext = (/\.([A-Za-z0-9]+)$/.exec(String(filename || "")) || [])[1];
+	ext = (ext || "").toLowerCase();
+	return { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+		gif: "image/gif", webp: "image/webp", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }[ext] || "application/octet-stream";
+}
+
+/* One multipart/form-data body. fields: { name: text }; the file goes in the part called "file".
+   Resolves { contentType, base64 }. */
+function multipartBody(fields, filename, mime, fileBytes) {
+	var boundary = "----IODocScanner" + Date.now().toString(16) + Math.floor(Math.random() * 1e9).toString(16);
+	var chunks = [];
+	Object.keys(fields).forEach(function (k) {
+		if (fields[k] === undefined || fields[k] === null || fields[k] === "") return;
+		chunks.push(utf8Bytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + k + "\"\r\n\r\n" +
+			String(fields[k]) + "\r\n"));
+	});
+	var safe = String(filename).replace(/[\r\n"\\]/g, "_");
+	chunks.push(utf8Bytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + safe + "\"\r\n" +
+		"Content-Type: " + mime + "\r\n\r\n"));
+	chunks.push(fileBytes);
+	chunks.push(utf8Bytes("\r\n--" + boundary + "--\r\n"));
+	var total = 0;
+	chunks.forEach(function (c) { total += c.length; });
+	var all = new Uint8Array(total), at = 0;
+	chunks.forEach(function (c) { all.set(c, at); at += c.length; });
+	return { contentType: "multipart/form-data; boundary=" + boundary, base64: bytesBase64(all) };
+}
+
+/* Step 1. Uploads the file (private) and resolves the File record as the server has it
+   ({ name, file_url, file_size, is_private … }) after making sure its address is under /private/files/. */
+function uploadFile(dataUrl, filename) {
+	var base64 = String(dataUrl).indexOf(",") >= 0
+		? String(dataUrl).split(",").slice(1).join(",")
+		: String(dataUrl);
+	var bytes;
+	try { bytes = base64Bytes(base64); } catch (e) { return Promise.reject(new Error("The file could not be read (not valid base64).")); }
+	var body = multipartBody({ is_private: 1, folder: "Home/Attachments" }, filename,
+		guessMime(filename, dataUrl), bytes);
+	return login().then(function () {
+		var h = authHeaders(false);
+		h["Content-Type"] = body.contentType;
+		h["X-CS-Body-Encoding"] = "base64";
+		return request("POST", methodUrl("upload_file"), h, body.base64, 120);
+	}).then(function (r) {
+		if (r.status < 200 || r.status >= 300) {
+			var e = new Error("ERPNext rejected the upload");
+			e.errors = toErrors(r.status, r.body, "File");
+			e.status = r.status;
+			throw e;
+		}
+		var j = {};
+		try { j = JSON.parse(r.body || "{}"); } catch (x) { /* not JSON */ }
+		var m = j.message;
+		if (!m || !m.name) throw new Error("ERPNext accepted the upload but did not say where it stored the file.");
+		/* read the record back: the stored size and the final address are what matter */
+		return fetchDoc("File", m.name).then(function (fdoc) { return fdoc || m; }, function () { return m; });
+	}).then(function (fdoc) {
+		return ensurePrivate(fdoc.name, fdoc);
+	});
+}
+
+/* Step 2. Links an already stored file to a document: upload_file with file_url (no file part) creates
+   the File record attached to doctype/docname. Resolves that record ({ name, file_url … }). */
+function linkFile(doctype, docname, fileUrl, filename) {
+	return login().then(function () {
+		return request("POST", methodUrl("upload_file"), authHeaders(false), form({
+			doctype: doctype, docname: docname, file_url: fileUrl,
+			filename: filename, file_name: filename, is_private: 1
+		}), 60);
+	}).then(function (r) {
+		if (r.status < 200 || r.status >= 300) {
+			var e = new Error("ERPNext rejected attaching the file");
+			e.errors = toErrors(r.status, r.body, doctype);
+			e.status = r.status;
+			throw e;
+		}
+		var j = {};
+		try { j = JSON.parse(r.body || "{}"); } catch (x) { /* not JSON */ }
+		return j.message || { file_url: fileUrl };
+	});
+}
+
+/* Both steps. Resolves { up, linked }; a failure of step 2 carries the stored file's address. */
+function uploadAndAttach(dataUrl, filename, doctype, docname) {
+	return uploadFile(dataUrl, filename).then(function (up) {
+		return linkFile(doctype, docname, up.file_url, filename).then(function (linked) {
+			return { up: up, linked: linked };
+		}, function (err) {
+			var m = err && err.errors && err.errors[0] && err.errors[0].message ? err.errors[0].message : (err && err.message) || "unknown error";
+			var e = new Error("The file was uploaded (" + up.file_url + "), but ERPNext could not attach it to " +
+				doctype + " " + docname + ": " + m);
+			e.uploaded = up;
+			throw e;
+		});
+	});
+}
+
+/* Uploads the photo of the card and attaches it to a document — private, because a business card is
+   personal data. */
 function attachImage(doctype, name, dataUrl, label) {
 	if (!dataUrl || !name) return Promise.resolve({ state: "off" });
 	var base64 = String(dataUrl).indexOf(",") >= 0
@@ -851,25 +983,13 @@ function attachImage(doctype, name, dataUrl, label) {
 	var stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 	var safe = String(label || "card").replace(/[^A-Za-z0-9]+/g, "-")
 		.replace(/^-+|-+$/g, "").slice(0, 40) || "card";
-	return createDoc("File", {
-		file_name: "business-card-" + safe + "-" + stamp + ".jpg",
-		is_private: 1,
-		decode: 1,
-		attached_to_doctype: doctype,
-		attached_to_name: name,
-		content: base64
-	}, []).then(function (fileName) {
-		return fetchDoc("File", fileName).then(function (fdoc) {
-			return ensurePrivate(fileName, fdoc);
-		}).then(function (fdoc) {
-			return { state: "created", name: fileName, url: fdoc && fdoc.file_url || "" };
-		}, function (e) {
-			return { state: "error", name: fileName, errors: [{ field: "", message: e.message || String(e) }] };
+	return uploadAndAttach(dataUrl, "business-card-" + safe + "-" + stamp + ".jpg", doctype, name)
+		.then(function (r) {
+			return { state: "created", name: r.up.name, url: r.up.file_url || "" };
+		}).catch(function (e) {
+			return { state: "error", name: e.uploaded && e.uploaded.name,
+				errors: e.errors || [{ field: "", message: e.message || String(e) }] };
 		});
-	}).catch(function (e) {
-		return { state: "error",
-			errors: e.errors || [{ field: "", message: e.message || String(e) }] };
-	});
 }
 
 /* Updates fields on an existing document. Used to fill in a later section
@@ -913,26 +1033,14 @@ function attachFile(doctype, name, dataUrl, filename, fieldname) {
 		if (extra) Object.keys(extra).forEach(function (k) { out[k] = extra[k]; });
 		return out;
 	}
-	return createDoc("File", {
-		file_name: filename || ("document-" + Date.now() + ".pdf"),
-		is_private: 1,
-		decode: 1,
-		attached_to_doctype: doctype,
-		attached_to_name: name,
-		attached_to_field: fieldname || undefined,
-		content: base64
-	}, []).then(function (fileName) {
-		return fetchDoc("File", fileName).then(function (fdoc) {
-			return ensurePrivate(fileName, fdoc).then(null, function (e) {
-				return { _failed: e.message || String(e), file_url: fdoc && fdoc.file_url || "" };
-			});
-		}).then(function (fdoc) {
-			if (fdoc && fdoc._failed) return fail(fdoc._failed, { name: fileName, url: fdoc.file_url });
-			var url = fdoc && fdoc.file_url ? fdoc.file_url : "";
-			var size = fdoc && fdoc.file_size ? Number(fdoc.file_size) : 0;
+	return uploadAndAttach(dataUrl, filename || ("document-" + Date.now() + ".pdf"), doctype, name)
+		.then(function (r) {
+			var fileName = r.up.name;
+			var url = (r.linked && r.linked.file_url) || r.up.file_url || "";
+			var size = r.up.file_size ? Number(r.up.file_size) : 0;
 			var info = { name: fileName, url: url, size: size };
 			if (!url) {
-				return fail("ERPNext created the attachment record but gave it no file address, so the file cannot be opened.", info);
+				return fail("ERPNext stored the file but gave it no file address, so it cannot be opened.", info);
 			}
 			if (size && sent && Math.abs(size - sent) > Math.max(16, sent * 0.02)) {
 				return fail("ERPNext stored " + size + " bytes but " + sent + " were sent — the attachment " +
@@ -941,12 +1049,12 @@ function attachFile(doctype, name, dataUrl, filename, fieldname) {
 			/* is the file really there? ask for its first bytes */
 			var h = authHeaders(false);
 			h["Range"] = "bytes=0-15";
-			return request("GET", cfg.url + encodeURI(url), h, "", 30).then(function (r) {
-				if (r.status === 404) {
+			return request("GET", cfg.url + encodeURI(url), h, "", 30).then(function (rr) {
+				if (rr.status === 404) {
 					return fail("ERPNext lists the attachment, but its file is missing on the server (404 for " + url + ").", info);
 				}
-				if (r.status >= 400) {
-					return fail("The attachment was uploaded, but the server refuses to serve it (" + r.status + " for " + url + ").", info);
+				if (rr.status >= 400) {
+					return fail("The attachment was uploaded, but the server refuses to serve it (" + rr.status + " for " + url + ").", info);
 				}
 				return null;
 			}, function () { return null; /* could not check — do not claim a failure */ }).then(function (bad) {
@@ -961,14 +1069,11 @@ function attachFile(doctype, name, dataUrl, filename, fieldname) {
 					return fail("The file is attached, but it could not be written into the \u201c" + fieldname + "\u201d field: " + m, info);
 				});
 			});
-		}, function (e) {
+		}).catch(function (e) {
+			var extra = e && e.uploaded ? { name: e.uploaded.name, url: e.uploaded.file_url } : null;
 			var m = e && e.errors && e.errors[0] && e.errors[0].message ? e.errors[0].message : (e && e.message) || "unknown error";
-			return fail("The file was uploaded, but ERPNext could not read the attachment record back: " + m, { name: fileName });
+			return fail(m, extra);
 		});
-	}).catch(function (e) {
-		return { state: "error",
-			errors: e.errors || [{ field: "", message: e.message || String(e) }] };
-	});
 }
 
 /* ------------------------------------------------------------------- sync */

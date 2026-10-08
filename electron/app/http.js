@@ -17,6 +17,7 @@
 "use strict";
 
 const MAX_REDIRECTS = 5;
+const BODY_ENCODING_HEADER = "x-cs-body-encoding";
 
 /* Session cookies. ERPNext's email-and-password mode logs in once at
    /api/method/login and relies on the "sid" cookie it sets for every call
@@ -77,6 +78,13 @@ async function request(opts) {
 		let url = new URL(opts.url);
 		let headers = Object.assign({}, opts.headers || {});
 		let body = opts.body || undefined;
+		/* A binary body (a multipart upload) cannot travel through the bridge as text, so the web layer
+		   sends it base64-encoded and says so with this header, which is removed here. */
+		Object.keys(headers).forEach((k) => {
+			if (k.toLowerCase() !== BODY_ENCODING_HEADER) return;
+			if (String(headers[k]).toLowerCase() === "base64" && body) body = Buffer.from(String(body), "base64");
+			delete headers[k];
+		});
 		const hops = [];
 			let cookieSent = false;
 

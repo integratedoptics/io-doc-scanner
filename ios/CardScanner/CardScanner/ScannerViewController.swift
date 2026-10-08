@@ -428,13 +428,26 @@ final class ScannerViewController: UIViewController {
         r.httpMethod = method.uppercased()
         r.timeoutInterval = max(5, min(timeout, 120))
         r.setValue("application/json", forHTTPHeaderField: "Accept")
+        var binaryBody = false
         if let d = headersJson.data(using: .utf8),
            let h = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] {
-            for (k, v) in h { r.setValue(String(describing: v), forHTTPHeaderField: k) }
+            for (k, v) in h {
+                /* a binary body (multipart upload) arrives base64-encoded, flagged by this header */
+                if k.lowercased() == "x-cs-body-encoding" {
+                    binaryBody = String(describing: v).lowercased() == "base64"
+                    continue
+                }
+                r.setValue(String(describing: v), forHTTPHeaderField: k)
+            }
         }
         let m = r.httpMethod ?? "GET"
         if m != "GET" && m != "HEAD" && !body.isEmpty {
-            r.httpBody = body.data(using: .utf8)
+            if binaryBody {
+                guard let bytes = Data(base64Encoded: body) else { return fail("the upload could not be encoded") }
+                r.httpBody = bytes
+            } else {
+                r.httpBody = body.data(using: .utf8)
+            }
         }
 
         netSession.dataTask(with: r) { data, resp, err in

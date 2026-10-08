@@ -360,13 +360,21 @@ public class MainActivity extends Activity {
                 c.setReadTimeout(Math.max(5, timeoutSec) * 1000);
                 c.setRequestProperty("Accept", "application/json");
                 JSONObject h = new JSONObject(headersJson == null || headersJson.isEmpty() ? "{}" : headersJson);
+                boolean binaryBody = false;
                 for (java.util.Iterator<String> it = h.keys(); it.hasNext(); ) {
                     String k = it.next();
+                    /* a binary body (multipart upload) arrives base64-encoded, flagged by this header */
+                    if ("X-CS-Body-Encoding".equalsIgnoreCase(k)) {
+                        binaryBody = "base64".equalsIgnoreCase(h.getString(k));
+                        continue;
+                    }
                     c.setRequestProperty(k, h.getString(k));
                 }
                 if (body != null && !body.isEmpty() && !"GET".equals(m) && !"HEAD".equals(m)) {
                     c.setDoOutput(true);
-                    byte[] raw = body.getBytes(StandardCharsets.UTF_8);
+                    byte[] raw = binaryBody
+                            ? Base64.decode(body, Base64.DEFAULT)
+                            : body.getBytes(StandardCharsets.UTF_8);
                     c.setFixedLengthStreamingMode(raw.length);
                     try (OutputStream out = c.getOutputStream()) {
                         out.write(raw);
