@@ -125,6 +125,14 @@ var SCHEMA_PROMPT =
 "rugpjūčio, rugsėjo, spalio, lapkričio, gruodžio. German months: Januar, Februar, März, April, Mai, Juni, Juli, " +
 "August, September, Oktober, November, Dezember. Amounts: \"1.234,56\" and \"1 234,56\" (German/Lithuanian style) " +
 "both mean 1234.56 — return a JSON number with a dot as the decimal separator and no thousands separators.\n\n" +
+"WHO IS THE SELLER (supplier_*) AND WHO IS THE BUYER (customer_*): the seller issues the invoice and is paid — it stands under " +
+"\"Tiekėjas\", \"Pardavėjas\", \"Verkäufer\", \"Lieferant\", \"Seller\", \"Supplier\", \"Vendor\", \"From\", owns the bank account to " +
+"pay into, and usually repeats in the letterhead or footer. The buyer stands under \"Pirkėjas\", \"Gavėjas\", \"Käufer\", " +
+"\"Kunde\", \"Bill to\", \"Sold to\". Invoices often print the two parties SIDE BY SIDE in two columns: a label belongs to the " +
+"column it stands in and to the name directly UNDER it, never to whatever follows it in the text. In a text layer that reads " +
+"\"Tiekėjas: Pirkėjas: <name A> <name B> …\" name A is the first column's (the supplier's) and name B the second's. " +
+"Look at the page itself when a file is attached. On a purchase the buyer is normally us (our name and codes above) — " +
+"so the company with OUR codes is never the supplier there.\n" +
 "If a field is not in the document, use null — never invent a value or copy one from the wrong party.";
 
 function stripFences(s) {
@@ -162,6 +170,8 @@ function buildContent(input, hint) {
 		} else {
 			throw new Error("Only PDF, JPEG and PNG files can be read (this one is " + mime + ").");
 		}
+		var tl = String((input && input.text) || "").trim();
+		if (tl) prompt += "\n--- TEXT LAYER OF THE FILE (extracted by the app; two-column blocks are already read column by column) ---\n" + tl.slice(0, 15000);
 		return [block, { type: "text", text: prompt }];
 	}
 	return prompt + "\n--- DOCUMENT TEXT ---\n" + String((input && input.text) || "").slice(0, 15000);
@@ -209,11 +219,12 @@ function extractFields(text, settings, hint) {
 	catch (e) { return Promise.reject(e); }
 }
 
-/* extractFromFile(dataUrl, settings, hint) -> Promise<{ fields, raw }> */
-function extractFromFile(dataUrl, settings, hint) {
+/* extractFromFile(dataUrl, settings, hint, text) -> Promise<{ fields, raw }>
+   `text` (optional) is the file's own text layer, sent alongside the file. */
+function extractFromFile(dataUrl, settings, hint, text) {
 	var bad = ready(settings);
 	if (bad) return Promise.reject(new Error(bad));
-	try { return send(buildContent({ dataUrl: dataUrl }, hint), settings); }
+	try { return send(buildContent({ dataUrl: dataUrl, text: text }, hint), settings); }
 	catch (e) { return Promise.reject(e); }
 }
 

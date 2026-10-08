@@ -557,11 +557,19 @@ function runExtraction() {
 			return;
 		}
 
-		warn(note(visual ? "Sending the " + (state.kind === "image" ? "picture" : "PDF") + " to the AI model to read…"
+		/* a PDF always goes as the file itself (with its text layer beside it): the AI sees the page, so it can
+		   tell side-by-side seller / buyer columns apart, which flat text cannot show */
+		var withFile = visual || state.kind === "pdf";
+		var aiSettings = { key: key, workspace: workspace };
+		warn(note(withFile ? "Sending the " + (state.kind === "image" ? "picture" : "PDF") + " to the AI model to read…"
 			: "Asking the AI model to read the fields…"));
-		var call = visual
-			? window.CS_EXTRACT.extractFromFile(state.dataUrl, { key: key, workspace: workspace }, hint)
-			: window.CS_EXTRACT.extractFields(r.text, { key: key, workspace: workspace }, hint);
+		var call = withFile
+			? window.CS_EXTRACT.extractFromFile(state.dataUrl, aiSettings, hint, good ? r.text : "")
+			: window.CS_EXTRACT.extractFields(r.text, aiSettings, hint);
+		if (withFile && !visual && good) {
+			/* the file could not be sent (too big, rejected): fall back to the text */
+			call = call.catch(function () { return window.CS_EXTRACT.extractFields(r.text, aiSettings, hint); });
+		}
 		return call.then(function (x) {
 			if (!live()) return;
 			fillFromExtraction(mergeFields(rules, x.fields), false);

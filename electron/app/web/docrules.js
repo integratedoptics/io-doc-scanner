@@ -323,7 +323,7 @@ function allMatches(re, t, groupFn) {
 
 function findCodes(t) {
 	var reg = allMatches(
-		/(?:company\s*(?:code|reg(?:istration)?\.?\s*(?:no|number|nr)?)|reg(?:istration)?\.?\s*(?:no|number|nr|code)|imones\s*kodas|im\.?\s*kodas|registernummer|org(?:anisation)?\.?\s*(?:nr|no|number)|companies\s*house\s*(?:no|number)?)\b[\s.:#]*([A-Za-z0-9][A-Za-z0-9\-]{3,14})/gi,
+		/(?:company\s*(?:code|reg(?:istration)?\.?\s*(?:no|number|nr)?)|reg(?:istration)?\.?\s*(?:no|number|nr|code)|imones\s*kodas|im\.?\s*kodas|\bim\.?\s*k(?![A-Za-z0-9])|registernummer|org(?:anisation)?\.?\s*(?:nr|no|number)|companies\s*house\s*(?:no|number)?)\b[\s.:#]*([A-Za-z0-9][A-Za-z0-9\-]{3,14})/gi,
 		t, function (m) { return /\d{4}/.test(m[1]) ? m[1] : null; })
 		.concat(allMatches(/\b(HR[AB])\s*(\d{3,8})\b/gi, t, function (m) { return m[1].toUpperCase() + " " + m[2]; }));
 	var vat = allMatches(

@@ -27,7 +27,7 @@ function page(opts) {
 	w.CS_EXTRACT = {
 		ready: function (s) { return s && s.key ? "" : "no key"; },
 		extractFields: function (t, s, h) { calls.text.push({ t: t, h: h }); return opts.ai ? opts.ai(t) : Promise.reject(new Error("no ai")); },
-		extractFromFile: function (d, s, h) { calls.file.push({ d: d, h: h }); return opts.ai ? opts.ai(d) : Promise.reject(new Error("no ai")); }
+		extractFromFile: function (d, s, h, t) { calls.file.push({ d: d, h: h, t: t, s: s }); return opts.ai ? opts.ai(d) : Promise.reject(new Error("no ai")); }
 	};
 	w.CS_ACC = { findExactSupplier: function () { return Promise.resolve(null); }, findSupplierMatches: function () { return Promise.resolve([]); },
 		suggestParents: function () { return Promise.resolve([]); } };
@@ -66,7 +66,7 @@ function page(opts) {
 		supplier_tax_id: "LT100007179012", total_amount: 3856.39, currency: "EUR", confidence: 0.9, notes: "", language: "lt" } }); } });
 	p.w.onDocPicked({ ok: true, name: "a.pdf", dataUrl: PDF });
 	await settle();
-	check("AI asked with the text, not the file", p.calls.text.length === 1 && p.calls.file.length === 0 && p.calls.text[0].t === TEXT);
+	check("a PDF with a text layer goes to the AI as the file, with its text beside it", p.calls.file.length === 1 && p.calls.text.length === 0 && p.calls.file[0].d === PDF && p.calls.file[0].t === TEXT);
 	check("AI wrong supplier is replaced by the seller", p.v("d-supplier_name") === "ESEMDA, UAB", p.v("d-supplier_name"));
 	check("our own codes are not used", p.v("d-supplier_reg_number") === "125816838" && p.v("d-supplier_tax_id") === "LT258168314");
 	check("the correction is explained", /replaced by the seller/.test(p.d.getElementById("d-notes").textContent));
@@ -324,6 +324,29 @@ function page(opts) {
 	p.w.onDocPicked({ ok: true, name: "pay.pdf", dataUrl: PDF });
 	await settle();
 	check("set: payment order is an attachment, found through the PO it names", p.v("d-type") === "attachment" && asked && asked.references.indexOf("PO-08353") >= 0);
+
+	/* the Nano Vita invoice (seller and buyer side by side): the AI names OUR company as supplier -> replaced by the
+	   seller the layout-aware offline reader found */
+	var NV = fs.readFileSync(path.join(__dirname, "fixtures/purchase-nanovita.flat.pdfjs.txt"), "utf8");
+	var items = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures/purchase-nanovita.items.json"), "utf8")).map(function (a) { return { str: a[0], transform: [1, 0, 0, 1, a[1], a[2]], width: a[3] }; });
+	var pvSrc = fs.readFileSync(path.join(__dirname, "../android/CardScanner/app/src/main/assets/pdfview.js"), "utf8");
+	var NVT = (new Function("window", pvSrc + "; return window.CS_PDF.layoutText;"))({}) ;
+	var layoutNV = typeof NVT === "function" ? NVT(items) : NV;
+	p = page({ key: "k", pdfText: layoutNV, ai: function () { return Promise.resolve({ fields: { doc_type: "purchase_invoice", document_no: "2333",
+		document_date: "2026-09-07", supplier_name: "UAB \"Integrated optics\"", total_amount: 3298.46, currency: "EUR", confidence: 0.8, notes: "", language: "lt" } }); } });
+	p.w.onDocPicked({ ok: true, name: "PO-08286.pdf", dataUrl: PDF });
+	await settle();
+	check("Nano Vita: the AI mistake (our own company as supplier) is replaced by the real seller", /Nano Vita/.test(p.v("d-supplier_name")) && !/Integrated/i.test(p.v("d-supplier_name")), p.v("d-supplier_name"));
+	check("Nano Vita: the supplier's own codes, not ours", p.v("d-supplier_reg_number") === "301920531", p.v("d-supplier_reg_number"));
+
+	/* the file cannot be sent (e.g. too big): a PDF with a text layer falls back to the text */
+	var tries = [];
+	p = page({ key: "k" });
+	p.w.CS_EXTRACT.extractFromFile = function () { tries.push("file"); return Promise.reject(new Error("too big")); };
+	p.w.CS_EXTRACT.extractFields = function (t) { tries.push("text"); return Promise.resolve({ fields: { doc_type: "purchase_invoice", document_no: "E202604-122", document_date: "2026-04-22", supplier_name: "ESEMDA, UAB", confidence: 0.9, notes: "", language: "lt" } }); };
+	p.w.onDocPicked({ ok: true, name: "a.pdf", dataUrl: PDF });
+	await settle();
+	check("file refused -> falls back to the text", tries.join() === "file,text" && p.v("d-supplier_name") === "ESEMDA, UAB", tries.join() + " " + p.v("d-supplier_name"));
 
 	console.log(fails ? fails + " FAILED" : "all passed");
 	process.exit(fails ? 1 : 0);

@@ -35,6 +35,16 @@ function check(l, c) { if (!c) fails++; console.log((c ? "ok   " : "FAIL ") + l)
 	check("key and version headers", sent.headers["x-api-key"] === "k" && !!sent.headers["anthropic-version"]);
 	check("model", sent.body.model === "claude-sonnet-5");
 	check("no temperature parameter (deprecated for this model)", !("temperature" in sent.body) && !("top_p" in sent.body) && !("top_k" in sent.body));
+	/* a file goes with its text layer, and the prompt explains side-by-side seller / buyer columns */
+	await X.extractFromFile("data:application/pdf;base64,QUJD", { key: "k" }, "purchase_invoice", "Tiekėjas: UAB \"Nano Vita\" Pirkėjas: UAB \"Integrated optics\"");
+	check("file request: document block first, then one text block carrying prompt and text layer",
+		sent.body.messages[0].content[0].type === "document" && sent.body.messages[0].content[1].type === "text" &&
+		/TEXT LAYER OF THE FILE[^\n]*\n[\s\S]*Tiekėjas: UAB "Nano Vita"/.test(sent.body.messages[0].content[1].text));
+	await X.extractFromFile("data:application/pdf;base64,QUJD", { key: "k" }, "");
+	check("file request without a text layer has no text-layer section", !/TEXT LAYER/.test(sent.body.messages[0].content[1].text));
+	var SPR = X._internals.SCHEMA_PROMPT;
+	check("prompt: seller/buyer rule for side-by-side columns", /SIDE BY SIDE/.test(SPR) && /Tiekėjas/.test(SPR) && /Pirkėjas/.test(SPR) &&
+		/never the supplier/.test(SPR));
 	check("no workspace header unless a workspace is set", !("anthropic-workspace-id" in sent.headers));
 	await X.extractFields("x", { key: "k", workspace: " wrkspc_123 " }, "");
 	check("workspace header sent (trimmed) when set", sent.headers["anthropic-workspace-id"] === "wrkspc_123");
