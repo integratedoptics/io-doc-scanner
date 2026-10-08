@@ -306,11 +306,11 @@ function page(opts) {
 		p.d.getElementById("d-box-supplier").style.display === "none" && p.d.getElementById("d-box-customer").style.display === "none" &&
 		p.d.getElementById("d-row-parent").style.display !== "none" && p.d.getElementById("d-row-main-extra").style.display === "none");
 	var att = null;
-	p.w.CS_ACC.attachToParent = function (n, d, f) { att = [n, d, f]; return Promise.resolve({ name: n, file: { state: "created" } }); };
+	p.w.CS_ACC.attachToParent = function (n, d, f, note) { att = [n, d, f, note]; return Promise.resolve({ name: "ACC-0099", parent: n, file: { state: "created" } }); };
 	p.d.getElementById("btn-doc-approve").click();
 	await settle();
-	check("set: approving an attachment only attaches the file to the chosen record", !!att && att[0] === "ACC-0007" && att[1] === PDF && att[2] === "label.pdf" &&
-		/Attached to/.test(p.d.getElementById("d-stat").textContent), JSON.stringify(att));
+	check("set: approving an attachment saves it as a child of the chosen record", !!att && att[0] === "ACC-0007" && att[1] === PDF && att[2] === "label.pdf" &&
+		/Waybill/.test(att[3]) && /Saved as ACC-0099, a child of ACC-0007/.test(p.d.getElementById("d-stat").textContent), JSON.stringify(att));
 
 	p = page({ pdfText: setText("sales-invoice"), acc: accStub([]), customers: [C("UniNanoTech Co., Ltd.", "UniNanoTech Co., Ltd.", 0.97, false)] });
 	p.w.onDocPicked({ ok: true, name: "s.pdf", dataUrl: PDF });

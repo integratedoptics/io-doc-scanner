@@ -594,11 +594,12 @@ function approve() {
 		}
 		busy($("btn-doc-approve"), true, "Sending…");
 		$("d-stat").innerHTML = "";
-		window.CS_ACC.attachToParent(parent0, state.dataUrl, state.fileName).then(function (res) {
+		var kindLabel = { waybill: "Waybill / courier label", payment_order: "Payment order", other: "Supporting paper" }[state.attachmentKind] || "Supporting paper";
+		window.CS_ACC.attachToParent(parent0, state.dataUrl, state.fileName, kindLabel + (state.fileName ? " — " + state.fileName : "")).then(function (res) {
 			busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
 			var ok = res.file && res.file.state === "created";
 			$("d-stat").innerHTML = ok
-				? '<p class="hint" style="color:#1f8a4c">Attached to <b>' + esc(res.name) + ".</b></p>"
+				? '<p class="hint" style="color:#1f8a4c">Saved as <b>' + esc(res.name) + "</b>, a child of <b>" + esc(res.parent || parent0) + ".</b></p>"
 				: '<p class="hint" style="color:var(--err)">The file could not be attached: ' +
 					esc((res.file && res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "unknown error") + "</p>";
 			if (ok) resetForm(true);
@@ -633,12 +634,12 @@ function approve() {
 	$("d-stat").innerHTML = "";
 	var task = sec === "main"
 		? window.CS_ACC.createMain(f, state.dataUrl, state.fileName)
-		: window.CS_ACC.fillSection(sec, parentName, f, state.dataUrl, state.fileName);
+		: window.CS_ACC.createChild(sec, parentName, f, state.dataUrl, state.fileName);
 
 	task.then(function (res) {
 		busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
 		var lines = ['<p class="hint" style="color:#1f8a4c">Saved as <b>' + esc(res.name) + "</b> (" +
-			esc(DOC_TYPE_LABELS[t]) + ").</p>"];
+			esc(DOC_TYPE_LABELS[t]) + (res.parent ? ", a child of <b>" + esc(res.parent) + "</b>" : ", parent document") + ").</p>"];
 		if (res.file && res.file.state === "created") {
 			lines.push('<p class="hint" style="color:#1f8a4c">File attached.</p>');
 		} else if (res.file && res.file.state === "error") {

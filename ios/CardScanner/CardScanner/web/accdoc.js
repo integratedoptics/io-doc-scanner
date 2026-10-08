@@ -7,13 +7,14 @@
    checkbox is set, which is why filling a later section means finding and
    updating the SAME record rather than creating a new one.
 
-   NOT YET CONFIRMED: this doctype also carries is_parent_document /
-   is_single_document / parent_document fields for a second, coarser
-   hierarchy (grouping several whole bundles under one umbrella record —
-   see child_documents_html). This module deliberately leaves those three
-   fields untouched rather than guess at that structure; do not set them
-   from here until that's confirmed against how the doctype is actually
-   used in ERPNext.
+   Parent / child (decided 2026-10-08): the main document of a bundle — a
+   purchase, sales or proforma invoice — is ALWAYS saved with
+   is_parent_document = 1. Every other document (customs declaration, CD
+   invoice, shipping invoice, waybill / courier label / payment order) is
+   saved as its OWN Accounts Document, a child: parent_document points at the
+   invoice record, it takes the same naming series, and only its own section
+   is filled. is_single_document is left untouched. Children are never offered
+   as parents.
 
    Built on top of window.CS_ERP.shared, which already owns auth, doctype-
    metadata checks and error handling — this module only knows the shape of
@@ -284,12 +285,14 @@ function suggestParents(fields, opts) {
 	var refs = referenceSet(fields);
 	var cols = ["name", "naming_series", "supplier", "supplier_code", "customer", "document_date", "document_no",
 		"purchase_order_reference", "sales_invoice_reference", "cd_document_no", "cd_invoice_document_no",
-		"shipping_invoice_document_no"];
+		"shipping_invoice_document_no", "parent_document"];
 	var base = ["name", "naming_series", "supplier", "supplier_code", "document_date", "purchase_order_reference", "document_no"];
 
 	return erp().getList(DOCTYPE, null, cols, 300, "modified desc")
 		.catch(function () { return erp().getList(DOCTYPE, null, base, 300); })
 		.then(function (rows) {
+			/* a child record (parent_document set) is never a parent */
+			rows = rows.filter(function (r) { return !r.parent_document; });
 			var scored = rows.map(function (r) {
 				var reasons = [], score = 0, hits = 0;
 				REF_COLUMNS.forEach(function (c) {
@@ -321,13 +324,12 @@ function suggestParents(fields, opts) {
 		});
 }
 
-/* Files a supporting paper (waybill, courier label, payment order, …) on an existing Accounts Document
-   as a plain attachment — no field is filled in. */
-function attachToParent(parentName, fileDataUrl, fileName) {
+/* Files a supporting paper (waybill, courier label, payment order, …) as a CHILD Accounts Document of the
+   chosen parent: same naming series, parent_document set, the file in its `file` field, `note` (what kind
+   of paper it is) in the comment. No other field is filled. */
+function attachToParent(parentName, fileDataUrl, fileName, note) {
 	if (!parentName) return Promise.reject(new Error("Pick the record to attach it to first."));
-	return erp().attachFile(DOCTYPE, parentName, fileDataUrl, fileName, "").then(function (r) {
-		return { name: parentName, section: "attachment", file: r, notes: [] };
-	});
+	return createChild("attachment", parentName, { comment: note ? String(note) : "" }, fileDataUrl, fileName);
 }
 
 /* Do the PO numbers (and a sales invoice number) printed on the document exist in ERPNext?
@@ -394,6 +396,7 @@ function createMain(fields, fileDataUrl, fileName) {
 	var e = erp();
 	var patch = sectionPatch("main", fields);
 	patch.naming_series = fields.namingSeries || "PURCHASE-";
+	patch.is_parent_document = 1;
 	return e.clean(DOCTYPE, patch, []).then(function (c) {
 		return e.createDoc(DOCTYPE, c.doc, c.notes).then(function (name) {
 			return e.attachFile(DOCTYPE, name, fileDataUrl, fileName, SECTIONS.main.file)
@@ -404,23 +407,42 @@ function createMain(fields, fileDataUrl, fileName) {
 	});
 }
 
-/* Fills in one of the three later sections on an existing parent document
-   (found via suggestParents(), or picked manually in the review UI). */
-function fillSection(section, parentName, fields, fileDataUrl, fileName) {
+/* Creates a CHILD Accounts Document for a customs declaration / CD invoice / shipping invoice (section) or a
+   plain supporting paper (section "attachment") under an existing parent: parent_document = parent, the same
+   naming series as the parent, only this document's own section filled, the file attached to that section's
+   file field. The parent is marked is_parent_document = 1 if it is not already (a failure there is reported
+   as a note, not as an error — the child exists by then). */
+function createChild(section, parentName, fields, fileDataUrl, fileName) {
 	if (section === "main") {
-		throw new Error("fillSection is for cd / cdInvoice / shipping — " +
+		throw new Error("createChild is for cd / cdInvoice / shipping / attachment — " +
 			"use createMain for a fresh main document.");
 	}
+	if (!parentName) return Promise.reject(new Error("Pick the record to file this under first."));
 	var e = erp();
-	var patch = sectionPatch(section, fields);
-	return e.clean(DOCTYPE, patch, []).then(function (c) {
-		return e.updateDoc(DOCTYPE, parentName, c.doc).then(function () {
-			return e.attachFile(DOCTYPE, parentName, fileDataUrl, fileName,
-					SECTIONS[section].file)
-				.then(function (fileResult) {
-					return { name: parentName, section: section,
-						file: fileResult, notes: c.notes };
+	var attachment = section === "attachment";
+	return e.fetchDoc(DOCTYPE, parentName).then(function (parent) {
+		if (!parent) throw new Error("There is no Accounts Document called \u201c" + parentName + "\u201d.");
+		if (parent.parent_document) {
+			throw new Error(parentName + " is itself a child of " + parent.parent_document +
+				" — pick that parent record instead.");
+		}
+		var patch = attachment ? { comment: fields.comment || "" } : sectionPatch(section, fields);
+		patch.naming_series = parent.naming_series || fields.namingSeries || "PURCHASE-";
+		patch.parent_document = parentName;
+		var fileField = attachment ? SECTIONS.main.file : SECTIONS[section].file;
+		return e.clean(DOCTYPE, patch, []).then(function (c) {
+			return e.createDoc(DOCTYPE, c.doc, c.notes).then(function (name) {
+				return e.attachFile(DOCTYPE, name, fileDataUrl, fileName, fileField).then(function (fileResult) {
+					var out = { name: name, parent: parentName, section: section, file: fileResult, notes: c.notes };
+					if (parent.is_parent_document) return out;
+					return e.updateDoc(DOCTYPE, parentName, { is_parent_document: 1 }).then(function () { return out; },
+						function () {
+							out.notes = (out.notes || []).concat([{ field: "is_parent_document", message:
+								"Could not tick \u201cparent document\u201d on " + parentName + " — please tick it in ERPNext." }]);
+							return out;
+						});
 				});
+			});
 		});
 	});
 }
@@ -433,7 +455,7 @@ return {
 	mergeSupplier: mergeSupplier,
 	suggestParents: suggestParents, attachToParent: attachToParent, checkReferences: checkReferences,
 	sectionPatch: sectionPatch,
-	createMain: createMain, fillSection: fillSection,
+	createMain: createMain, createChild: createChild,
 	_internals: { normPo: normPo, referenceSet: referenceSet, nameScore: nameScore, customerScore: customerScore, daysBetween: daysBetween, bigrams: bigrams,
 		LEGAL_FORMS: LEGAL_FORMS }
 };
