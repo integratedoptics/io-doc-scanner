@@ -516,6 +516,7 @@ function note(text, color) {
 function runExtraction() {
 	if (!state.dataUrl) return;
 	var key = settings().extract_key || "";
+	var workspace = settings().extract_workspace || "";
 	var hint = $("d-type").value;
 	var token = ++state.run;
 	function live() { return token === state.run; }
@@ -559,8 +560,8 @@ function runExtraction() {
 		warn(note(visual ? "Sending the " + (state.kind === "image" ? "picture" : "PDF") + " to the AI model to read…"
 			: "Asking the AI model to read the fields…"));
 		var call = visual
-			? window.CS_EXTRACT.extractFromFile(state.dataUrl, { key: key }, hint)
-			: window.CS_EXTRACT.extractFields(r.text, { key: key }, hint);
+			? window.CS_EXTRACT.extractFromFile(state.dataUrl, { key: key, workspace: workspace }, hint)
+			: window.CS_EXTRACT.extractFields(r.text, { key: key, workspace: workspace }, hint);
 		return call.then(function (x) {
 			if (!live()) return;
 			fillFromExtraction(mergeFields(rules, x.fields), false);

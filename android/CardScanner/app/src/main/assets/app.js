@@ -83,7 +83,7 @@ var DEFAULTS = {
 	/* ERPNext connection */
 	erp_url: "", erp_mode: "token", erp_key: "", erp_secret: "",
 	erp_usr: "", erp_pwd: "", erp_org: "Customer", erp_supplier_type: "",
-	extract_key: "",
+	extract_key: "", extract_workspace: "",
 	/* attach the photo of the card, and let the app fill small ERPNext lists */
 	erp_attach: true, erp_masters: true,
 	/* which of the three switches a new card starts with */
@@ -740,6 +740,7 @@ function paintSettings() {
 	$("s-erp-org").value = S.erp_org || "Customer";
 	$("s-erp-supplier-type").value = S.erp_supplier_type || "";
 	$("s-extract-key").value = S.extract_key || "";
+	$("s-extract-workspace").value = S.extract_workspace || "";
 	$("s-erp-attach").checked = S.erp_attach !== false;
 	$("s-erp-masters").checked = S.erp_masters !== false;
 	$("s-sync-org").checked = !!S.sync_org;
@@ -779,6 +780,7 @@ function grabSettings(silent) {
 	S.erp_org = $("s-erp-org").value;
 	S.erp_supplier_type = $("s-erp-supplier-type").value.trim();
 	S.extract_key = $("s-extract-key").value.trim();
+	S.extract_workspace = $("s-extract-workspace").value.trim();
 	S.erp_attach = $("s-erp-attach").checked;
 	S.erp_masters = $("s-erp-masters").checked;
 	S.sync_org = $("s-sync-org").checked;

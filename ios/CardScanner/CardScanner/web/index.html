@@ -466,6 +466,10 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <div class="f"><label>Anthropic API key</label>
         <input id="s-extract-key" type="password" autocapitalize="off" spellcheck="false">
       </div>
+      <div class="f"><label>Workspace ID (only if asked for)</label>
+        <input id="s-extract-workspace" type="text" autocapitalize="off" spellcheck="false" placeholder="wrkspc_… (leave blank normally)">
+      </div>
+      <p class="hint">If an extraction fails with “This API key is not scoped to a workspace … must include the anthropic-workspace-id header”, paste the ID of the workspace to use here (Anthropic Console → Settings → Workspaces). Leave it blank for keys that belong to one workspace.</p>
       <p class="hint">Used to read purchase invoices, customs declarations, CD invoices and shipping invoices you scan and pull out their fields (document number/date, supplier, PO reference, totals) with Claude Sonnet 5. On the Windows/macOS app, which has no on-device OCR, this same key is also used to read business-card photos directly — on Android/iOS, cards are still read on-device and this key isn’t used for them. Separate from the AI cleanup key below, which may be a different provider. Leave blank to enter fields by hand instead.</p>
     </div>
 

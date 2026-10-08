@@ -86,12 +86,12 @@ function processCardPhoto(buf, mime) {
 		fs.writeFileSync(path.join(IMAGES_DIR, name), buf);
 
 		var settings = (window.CS && window.CS.settings()) || {};
-		var bad = window.CS_CARDVISION.ready({ key: settings.extract_key });
+		var bad = window.CS_CARDVISION.ready({ key: settings.extract_key, workspace: settings.extract_workspace });
 		if (bad) {
 			window.CS.showDraft({ notes: bad }, name, dataUrl);
 			return;
 		}
-		window.CS_CARDVISION.extractCard(dataUrl, { key: settings.extract_key }).then(function (x) {
+		window.CS_CARDVISION.extractCard(dataUrl, { key: settings.extract_key, workspace: settings.extract_workspace }).then(function (x) {
 			window.CS.showDraft(x.fields || {}, name, dataUrl);
 		}).catch(function (e) {
 			window.CS.showDraft({ notes: "Automatic field recognition failed: " +

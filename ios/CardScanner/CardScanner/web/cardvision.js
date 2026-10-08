@@ -94,11 +94,14 @@ function extractCard(dataUrl, settings) {
 		}]
 	});
 
-	return window.CS_NET.request("POST", API_URL, {
+	var headers = {
 		"Content-Type": "application/json",
 		"x-api-key": settings.key,
 		"anthropic-version": ANTHROPIC_VERSION
-	}, body, 60).then(function (r) {
+	};
+	/* Keys that are not scoped to one workspace need the workspace named per request. */
+	if (settings.workspace) headers["anthropic-workspace-id"] = String(settings.workspace).trim();
+	return window.CS_NET.request("POST", API_URL, headers, body, 60).then(function (r) {
 		if (r.status < 200 || r.status >= 300) {
 			var msg = "The card-reading request failed (" + r.status + ")";
 			try {
