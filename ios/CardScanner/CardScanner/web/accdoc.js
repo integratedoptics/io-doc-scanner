@@ -180,6 +180,32 @@ function findExactSupplier(name) {
 		.then(function (rows) { return rows.length ? rows[0].name : null; });
 }
 
+/* A match that is safe to apply without asking: the same registration / tax ID, or the same name once
+   case, punctuation, the legal form ("UAB", "Ltd") and accents are ignored. Two different Suppliers that
+   both qualify make it ambiguous, so nothing is picked. */
+function confidentSupplier(matches) {
+	var strong = (matches || []).filter(function (m) { return m.codeMatch || m.score >= 0.97; });
+	if (!strong.length) return null;
+	var names = {};
+	strong.forEach(function (m) { names[m.supplier.name] = true; });
+	return Object.keys(names).length === 1 ? strong[0].supplier.name : null;
+}
+
+/* Makes sure `fields.supplierLink` holds the ERPNext Supplier to write: the one the employee chose, an exact
+   name, or a confident match. ERPNext only accepts the exact Supplier name in a Link field, so a printed
+   "SKUBIOS SIUNTOS, UAB" has to be turned into the stored `UAB "Skubios siuntos"` here or it is dropped. */
+function resolveSupplierLink(fields) {
+	if (!fields || !fields.supplierName || fields.supplierLink) return Promise.resolve(fields);
+	return findExactSupplier(fields.supplierName).then(function (exact) {
+		if (exact) { fields.supplierLink = exact; return fields; }
+		return findSupplierMatches(fields.supplierName, fields.supplierCode, 0.55).then(function (m) {
+			var best = confidentSupplier(m);
+			if (best) fields.supplierLink = best;
+			return fields;
+		});
+	}).catch(function () { return fields; });
+}
+
 /* ---------------------------------------------------------------- customers */
 
 /* The customer on a sales document, matched to the Customer list the same way a
@@ -394,16 +420,25 @@ function sectionPatch(section, fields) {
    override it before this is called. */
 function createMain(fields, fileDataUrl, fileName) {
 	var e = erp();
+	return resolveSupplierLink(fields).then(function () {
 	var patch = sectionPatch("main", fields);
 	patch.naming_series = fields.namingSeries || "PURCHASE-";
 	patch.is_parent_document = 1;
 	return e.clean(DOCTYPE, patch, []).then(function (c) {
+		/* a supplier ERPNext does not know is dropped by clean(); keep what the document said in the comment */
+		if (fields.supplierName && !c.doc.supplier) {
+			var line = "Supplier on the document: " + fields.supplierName +
+				(fields.supplierCode ? " (" + fields.supplierCode + ")" : "") +
+				" \u2014 no matching Supplier in ERPNext, please set it manually.";
+			c.doc.comment = c.doc.comment ? c.doc.comment + "\n" + line : line;
+		}
 		return e.createDoc(DOCTYPE, c.doc, c.notes).then(function (name) {
 			return e.attachFile(DOCTYPE, name, fileDataUrl, fileName, SECTIONS.main.file)
 				.then(function (fileResult) {
 					return { name: name, section: "main", file: fileResult, notes: c.notes };
 				});
 		});
+	});
 	});
 }
 
@@ -420,6 +455,7 @@ function createChild(section, parentName, fields, fileDataUrl, fileName) {
 	if (!parentName) return Promise.reject(new Error("Pick the record to file this under first."));
 	var e = erp();
 	var attachment = section === "attachment";
+	return (attachment ? Promise.resolve(fields) : resolveSupplierLink(fields)).then(function () {
 	return e.fetchDoc(DOCTYPE, parentName).then(function (parent) {
 		if (!parent) throw new Error("There is no Accounts Document called \u201c" + parentName + "\u201d.");
 		/* a parent may name ITSELF in parent_document (ERPNext fills it in on a parent); only a different name makes it a child */
@@ -462,12 +498,14 @@ function createChild(section, parentName, fields, fileDataUrl, fileName) {
 			});
 		});
 	});
+	});
 }
 
 return {
 	DOCTYPE: DOCTYPE, SECTIONS: SECTIONS, SECTION_NAMES: SECTION_NAMES,
 	normalizeName: normalizeName, diceCoefficient: diceCoefficient,
 	findSupplierMatches: findSupplierMatches, findExactSupplier: findExactSupplier,
+	confidentSupplier: confidentSupplier, resolveSupplierLink: resolveSupplierLink,
 	findCustomerMatches: findCustomerMatches,
 	mergeSupplier: mergeSupplier,
 	suggestParents: suggestParents, attachToParent: attachToParent, checkReferences: checkReferences,

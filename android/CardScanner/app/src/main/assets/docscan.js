@@ -163,6 +163,13 @@ function checkSupplier() {
 		if (exact) { state.supplierLink = exact; return; }
 		return window.CS_ACC.findSupplierMatches(name, c, 0.55).then(function (matches) {
 			if (!matches.length) return;
+			var sure = window.CS_ACC.confidentSupplier(matches);
+			if (sure) {
+				state.supplierLink = sure;
+				$("d-dupe-box").innerHTML = '<p class="hint" style="color:#1f8a4c">Linked to existing supplier ' +
+					esc(sure) + " (same company apart from spelling or legal form).</p>";
+				return;
+			}
 			var html = '<p class="hint" style="color:var(--violet)">Possible existing supplier' +
 				(matches.length > 1 ? "s" : "") +
 				" — pick one to avoid creating a duplicate, or leave it if this is genuinely new:</p>";
