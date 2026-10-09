@@ -63,9 +63,9 @@ rows = [
 
 	var cd = await ACC.createChild("cd", "ACC-1", { documentNo: "26LTVA100025C7F4R1", documentDate: "2026-08-25", supplierName: "Muitinės departamentas" }, "data:application/pdf;base64,QUJD", "cd.pdf");
 	var c1 = created[created.length - 1];
-	check("customs declaration: separate child record with its own section, linked to the parent",
+	check("customs declaration: separate child record with its own section, linked to the parent, with the mandatory Document No and Date",
 		c1.parent_document === "ACC-1" && c1.naming_series === "PURCHASE-" && c1.cd_document_no === "26LTVA100025C7F4R1" && c1.customs_declaration_cd_received === 1 &&
-		!c1.document_no && !c1.purchase_invoice_received && calls[calls.length - 1].attach[3] === "cd_file" && cd.parent === "ACC-1", JSON.stringify(c1));
+		c1.document_no === "26LTVA100025C7F4R1" && c1.document_date === "2026-08-25" && !c1.purchase_invoice_received && calls[calls.length - 1].attach[3] === "cd_file" && cd.parent === "ACC-1", JSON.stringify(c1));
 	var pu = updates[updates.length - 1];
 	check("customs declaration: the PARENT's cd_file shows the child's file and its section is switched on",
 		pu[0] === "ACC-1" && pu[1].cd_file === "/private/files/ACC-NEW-3-cd_file.pdf" && pu[1].customs_declaration_cd_received === 1, JSON.stringify(updates));
@@ -86,6 +86,12 @@ rows = [
 	docs["ACC-SELF"] = { name: "ACC-SELF", naming_series: "PURCHASE-", is_parent_document: 1, parent_document: "ACC-SELF" };
 	var self = await ACC.createChild("cd", "ACC-SELF", { documentNo: "26LTVA1", documentDate: "2026-10-05", supplierName: "Muitinės departamentas" }, "x", "cd.pdf");
 	check("a parent that names ITSELF in parent_document is still a parent (PURCHASE-07469 case)", !!self && !!self.name && self.state !== "error", JSON.stringify(self));
+	var cn = created[created.length - 1];
+	check("a child also carries the mandatory Document No and Document Date (ERPNext refuses it otherwise)", cn.document_no === "26LTVA1" && cn.document_date === "2026-10-05" && cn.cd_document_no === "26LTVA1", JSON.stringify(cn));
+	docs["ACC-P2"] = { name: "ACC-P2", naming_series: "PURCHASE-", is_parent_document: 1, document_no: "INV-9", document_date: "2026-09-30" };
+	await ACC.attachToParent("ACC-P2", "x", "label.pdf", "Waybill");
+	var ca = created[created.length - 1];
+	check("a supporting paper without a number of its own takes the parent's number and date", ca.document_no === "INV-9" && ca.document_date === "2026-09-30" && ca.parent_document === "ACC-P2", JSON.stringify(ca));
 	var e3 = null; try { await ACC.createChild("cd", "NOPE", { documentNo: "N" }, "x", "y"); } catch (x) { e3 = x; }
 	check("an unknown parent is reported", !!e3 && /NOPE/.test(e3.message));
 

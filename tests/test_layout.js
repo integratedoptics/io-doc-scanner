@@ -29,5 +29,15 @@ check("built-in reader: number, date, total", r.document_no === "2333" && r.docu
 var rf = window.CS_RULES.parse(flat, "purchase_invoice");
 check("(on the flat text the reader was wrong — why the order matters)", rf.supplier_name !== "UAB Nano Vita");
 
+
+/* a second two-column header: "Pirkėjas:" | "Pardavėjas:" with the companies indented under their labels (Skubios siuntos -> us) */
+var sk = n(window.CS_PDF.layoutText(items("cd-invoice-skubios.items.json")));
+check("indented columns: each label stands before its own company", /Pirkėjas: UAB INTEGRATED OPTICS/.test(sk) && /Pardavėjas: SKUBIOS SIUNTOS, UAB/.test(sk), sk.slice(0, 400));
+var rs = window.CS_RULES.parse(sk, "purchase_invoice");
+check("built-in reader: supplier is Skubios siuntos (no VAT code in the name), with its own codes", rs.supplier_name === "SKUBIOS SIUNTOS, UAB" && rs.supplier_reg_number === "134678891" && rs.supplier_tax_id === "LT346788917" && rs.issuer_is_ours === false, JSON.stringify(rs));
+check("built-in reader: number, date, total", rs.document_no === "MTPA261000114" && rs.document_date === "2026-10-08" && rs.total_amount === 13 && rs.currency === "EUR", JSON.stringify(rs));
+var rb = window.CS_RULES.parse("Pirkėjas: UAB INTEGRATED OPTICS Į/k: 302833442 , PVM m/k: LT100007179012 SKUBIOS SIUNTOS, UAB Inovacijų g. 3 Kauno r. Į/k: 134678891, PVM m/k: LT346788917 Pardavėjas:", "purchase_invoice");
+check("a VAT code that precedes the name is not part of it", !/LT100007179012/.test(rb.supplier_name || ""), JSON.stringify(rb.supplier_name));
+
 console.log(fails ? fails + " FAILED" : "all passed");
 process.exit(fails ? 1 : 0);

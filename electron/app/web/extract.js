@@ -141,6 +141,20 @@ function stripFences(s) {
 	return m ? m[1] : t;
 }
 
+/* All the text of an Anthropic reply: the text blocks, in order. A model that thinks first puts a "thinking"
+   block in front, so content[0] is not necessarily the answer. */
+function blocksText(j) {
+	var out = [];
+	((j && j.content) || []).forEach(function (b) { if (b && typeof b.text === "string") out.push(b.text); });
+	return out.join("\n");
+}
+
+/* Why a reply had no text, for the message shown to the user. */
+function emptyWhy(j) {
+	var types = ((j && j.content) || []).map(function (b) { return (b && b.type) || "?"; });
+	return " (stop reason: " + ((j && j.stop_reason) || "none") + "; blocks: " + (types.length ? types.join(", ") : "none") + ")";
+}
+
 /* The JSON object in the reply: bare, in a code fence, or with a sentence before/after it. */
 function parseReply(text) {
 	var t = stripFences(text);
@@ -189,7 +203,7 @@ function buildContent(input, hint) {
 function send(content, settings) {
 	var body = JSON.stringify({
 		model: MODEL,
-		max_tokens: 4096,
+		max_tokens: 16000,
 		messages: [{ role: "user", content: content }]
 	});
 	var headers = {
@@ -209,7 +223,7 @@ function send(content, settings) {
 			throw new Error(msg);
 		}
 		var j = JSON.parse(r.body || "{}");
-		var replyText = (j.content && j.content[0] && j.content[0].text) || "";
+		var replyText = blocksText(j);
 		var parsed;
 		try {
 			parsed = parseReply(replyText);
@@ -217,7 +231,7 @@ function send(content, settings) {
 			var cut = j.stop_reason === "max_tokens" ? " The reply was cut off before it was complete." : "";
 			var head = String(replyText).replace(/\s+/g, " ").trim().slice(0, 160);
 			throw new Error("Could not read the extracted fields back as JSON." + cut +
-				(head ? " The reply began: \u201c" + head + "\u201d" : " The reply was empty."));
+				(head ? " The reply began: \u201c" + head + "\u201d" : " The reply was empty" + emptyWhy(j) + "."));
 		}
 		return { fields: parsed, raw: replyText };
 	});
@@ -269,7 +283,7 @@ function complete(cfg, prompt, maxTokens) {
 		}
 		var txt = "";
 		if (j && j.choices && j.choices[0] && j.choices[0].message) txt = j.choices[0].message.content || "";
-		else if (j && j.content && j.content[0]) txt = j.content[0].text || "";
+		else if (j && j.content && j.content.length) txt = blocksText(j);
 		else if (j && j.error) throw new Error("The AI request failed: " + (j.error.message || JSON.stringify(j.error)));
 		return String(txt);
 	});

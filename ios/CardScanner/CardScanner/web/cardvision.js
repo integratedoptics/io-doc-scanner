@@ -110,7 +110,7 @@ function extractCard(dataUrl, settings) {
 			throw new Error(msg);
 		}
 		var j = JSON.parse(r.body || "{}");
-		var replyText = (j.content && j.content[0] && j.content[0].text) || "";
+		var replyText = ((j.content || []).filter(function (b) { return b && typeof b.text === "string"; }).map(function (b) { return b.text; }).join("\n")) || "";
 		var parsed;
 		try {
 			parsed = JSON.parse(stripFences(replyText));

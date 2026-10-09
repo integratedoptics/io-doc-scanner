@@ -321,13 +321,19 @@ function allMatches(re, t, groupFn) {
 	return out;
 }
 
+/* A VAT or company code that ended up in front of a name ("LT100007179012 SKUBIOS SIUNTOS, UAB") is not part of it. */
+function stripLeadingCodes(n) {
+	var out = String(n || "").replace(/^(?:\s*(?:[A-Z]{2}\s?\d[\d\s]{7,13}|\d{7,12})\s+)+/, "").trim();
+	return out || n;
+}
+
 function findCodes(t) {
 	var reg = allMatches(
-		/(?:company\s*(?:code|reg(?:istration)?\.?\s*(?:no|number|nr)?)|reg(?:istration)?\.?\s*(?:no|number|nr|code)|imones\s*kodas|im\.?\s*kodas|\bim\.?\s*k(?![A-Za-z0-9])|registernummer|org(?:anisation)?\.?\s*(?:nr|no|number)|companies\s*house\s*(?:no|number)?)\b[\s.:#]*([A-Za-z0-9][A-Za-z0-9\-]{3,14})/gi,
+		/(?:company\s*(?:code|reg(?:istration)?\.?\s*(?:no|number|nr)?)|reg(?:istration)?\.?\s*(?:no|number|nr|code)|imones\s*kodas|im\.?\s*kodas|\bim\.?\s*k(?![A-Za-z0-9])|\bi\s*\/\s*k(?![A-Za-z0-9])|registernummer|org(?:anisation)?\.?\s*(?:nr|no|number)|companies\s*house\s*(?:no|number)?)\b[\s.:#]*([A-Za-z0-9][A-Za-z0-9\-]{3,14})/gi,
 		t, function (m) { return /\d{4}/.test(m[1]) ? m[1] : null; })
 		.concat(allMatches(/\b(HR[AB])\s*(\d{3,8})\b/gi, t, function (m) { return m[1].toUpperCase() + " " + m[2]; }));
 	var vat = allMatches(
-		/\b(?:vat|pvm|ust|umsatzsteuer|mwst|tax\s*id)[A-Za-z .\-]{0,30}?[:#]?\s*((?:[A-Z]{2}\d{9}B\d{2})|(?:[A-Z]{2}(?:\s?\d){8,12})|\d{9,12})(?!\d)/gi,
+		/\b(?:vat|pvm|ust|umsatzsteuer|mwst|tax\s*id)[A-Za-z .\/\-]{0,30}?[:#]?\s*((?:[A-Z]{2}\d{9}B\d{2})|(?:[A-Z]{2}(?:\s?\d){8,12})|\d{9,12})(?!\d)/gi,
 		t, function (m) { return m[1].replace(/\s+/g, "").toUpperCase(); });
 	return { reg: reg, vat: vat };
 }
@@ -579,7 +585,7 @@ function parse(text, hint) {
 			out.customer_tax_id = codeOf(codes.vat, buyer, both, true);
 		}
 	} else if (issuer) {
-		out.supplier_name = issuer.name;
+		out.supplier_name = stripLeadingCodes(issuer.name);
 		out.supplier_reg_number = codeOf(codes.reg, issuer, both, false);
 		out.supplier_tax_id = codeOf(codes.vat, issuer, both, false);
 		if (!out.supplier_reg_number) out.supplier_reg_number = firstForeignCode(codes.reg);

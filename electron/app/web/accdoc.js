@@ -428,6 +428,12 @@ function createChild(section, parentName, fields, fileDataUrl, fileName) {
 				" — pick that parent record instead.");
 		}
 		var patch = attachment ? { comment: fields.comment || "" } : sectionPatch(section, fields);
+		/* every Accounts Document needs its own Document No and Document Date (mandatory in ERPNext), also a
+		   child whose real number lives in its section's fields: use this document's own, and for a plain
+		   supporting paper (no number of its own) the parent's */
+		var gn = fields.documentNo || parent.document_no, gd = fields.documentDate || parent.document_date;
+		if (gn) patch[SECTIONS.main.document_no] = gn;
+		if (gd) patch[SECTIONS.main.date] = gd;
 		patch.naming_series = parent.naming_series || fields.namingSeries || "PURCHASE-";
 		patch.parent_document = parentName;
 		var fileField = attachment ? SECTIONS.main.file : SECTIONS[section].file;

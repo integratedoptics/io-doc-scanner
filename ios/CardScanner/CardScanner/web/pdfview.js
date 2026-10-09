@@ -84,7 +84,14 @@ function layoutText(items) {
 	lines.forEach(function (ln) {
 		var cs = ln.cells, fits = false;
 		if (cur && cs.length <= 2 && cur.lastY - ln.y <= MAX_ROW_GAP) {
-			if (cs.length === 2) fits = near(cs[0].x, cur.c1) && near(cs[1].x, cur.c2);
+			if (cs.length === 2) {
+				fits = near(cs[1].x, cur.c2) && near(cs[0].x, cur.c1);
+				/* the company under a label may be indented ("Pirkėjas:" at the margin, the company a little
+				   further in): the second row of a block sets where the left column really starts */
+				if (!fits && cur.lines.length === 1 && cur.labels && near(cs[1].x, cur.c2) && cs[0].x > cur.c1 && cs[0].x - cur.c1 <= 40) {
+					cur.c1 = cs[0].x; fits = true;
+				}
+			}
 			else if (near(cs[0].x, cur.c1)) fits = cs[0].end < cur.c2 - 4;
 			else if (near(cs[0].x, cur.c2)) fits = true;
 		}
@@ -94,7 +101,9 @@ function layoutText(items) {
 		}
 		close();
 		if (cs.length === 2 && cs[1].x - cs[0].x >= MIN_COL_SPACING && cs[1].x - cs[0].end >= 15) {
-			cur = { c1: cs[0].x, c2: cs[1].x, lines: [ln], lastY: ln.y, two: 1 };
+			/* labels = the row is two headings ("Pirkėjas:" | "Pardavėjas:"), not a label and its amount */
+			cur = { c1: cs[0].x, c2: cs[1].x, lines: [ln], lastY: ln.y, two: 1,
+				labels: /:$/.test(cs[0].text) && /:$/.test(cs[1].text) };
 		}
 	});
 	close();

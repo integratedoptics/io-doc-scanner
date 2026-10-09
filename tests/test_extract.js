@@ -89,6 +89,12 @@ function check(l, c) { if (!c) fails++; console.log((c ? "ok   " : "FAIL ") + l)
 	var e6 = null; try { await X.extractFields("x", { key: "k" }, ""); } catch (x) { e6 = x; }
 	check("a reply cut off at the token limit is named as such", !!e6 && /cut off/.test(e6.message));
 	check("the reply limit is large enough for a long form", sent.body.max_tokens >= 4096);
+	reply = { status: 200, body: JSON.stringify({ stop_reason: "end_turn", content: [{ type: "thinking", thinking: "..." }, { type: "text", text: "{\"document_no\":\"MTPA261000114\"}" }] }) };
+	var rt = await X.extractFields("x", { key: "k" }, "");
+	check("a thinking block in front of the answer does not hide it", rt.fields.document_no === "MTPA261000114");
+	reply = { status: 200, body: JSON.stringify({ stop_reason: "max_tokens", content: [{ type: "thinking", thinking: "..." }] }) };
+	var e7 = null; try { await X.extractFields("x", { key: "k" }, ""); } catch (x) { e7 = x; }
+	check("an empty reply says why (stop reason and block types)", !!e7 && /empty \(stop reason: max_tokens; blocks: thinking\)/.test(e7.message), e7 && e7.message);
 
 	/* plain completion for the card clean-up / LinkedIn lookup */
 	reply = { status: 200, body: JSON.stringify({ content: [{ text: "{\"first_name\":\"Jane\"}" }] }) };
