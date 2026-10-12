@@ -108,6 +108,18 @@ textarea{min-height:88px;resize:vertical;font-size:13px}
 .hint{font-size:12px;color:var(--dgrey);margin:6px 0 0}
 input.warn{border-color:#d98300;background:rgba(217,131,0,.10)}
 .warntext{color:#b86e00}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:99px;white-space:nowrap}
+.pill.green{background:#e1f7ea;color:#1f8a4c}.pill.orange{background:#fff1e5;color:#b86e00}.pill.red{background:#fbe4e4;color:#b02a2a}
+.li{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:#fff}
+.li .row3{display:flex;gap:8px}.li .row3>div:first-child{flex:2}.li .row3>div{flex:1;min-width:0}
+.li input.desc{margin-top:6px}
+.li .matchrow{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0 4px}
+.seg{display:inline-flex;border:1px solid var(--grey);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:6px 12px;font-size:13px;color:var(--dgrey);cursor:pointer}
+.seg button.on{background:var(--black);color:#fff}
+.li select{width:100%;margin-top:4px}
+button.lnk{background:none;border:0;color:var(--err);font-size:12px;padding:6px 0 0;cursor:pointer}
+label.pick{display:block;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
 .mand{color:var(--orange);font-weight:bold}
 .pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;background:var(--po);border:1px solid var(--orange);color:var(--black);margin:0 5px 5px 0}
 
@@ -462,6 +474,31 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
     </div>
 
     <div class="card">
+      <h2 class="g">Test server &mdash; new document flow</h2>
+      <p class="hint" style="margin-bottom:8px">Purchase invoices, courier invoices, waybills and supplier quotations can also be filed on a backup / test ERPNext as Purchase Invoice, Purchase Receipt and Supplier Quotation. It uses the same sign-in as the connection above; leave the address empty to switch this off.</p>
+      <div class="f"><label>Test server address</label>
+        <input id="s-test-url" autocapitalize="off" spellcheck="false" inputmode="url" placeholder="https://test.example.com">
+      </div>
+      <div class="f"><label>Item group for new items</label>
+        <input id="s-new-group" autocapitalize="off" spellcheck="false" placeholder="e.g. Products">
+      </div>
+      <div class="f"><label>Stock UOM for new items</label>
+        <input id="s-new-uom" autocapitalize="off" spellcheck="false" placeholder="Nos">
+      </div>
+      <div class="f"><label>Item for lines without a code (optional)</label>
+        <input id="s-new-service" autocapitalize="off" spellcheck="false" placeholder="e.g. a Shipping service item, for courier charges">
+      </div>
+      <div class="f"><label>Company (optional)</label>
+        <input id="s-new-company" autocapitalize="off" spellcheck="false" placeholder="only if the server has several companies">
+      </div>
+      <div class="f"><label>Purchase taxes template (optional)</label>
+        <input id="s-new-taxes" autocapitalize="off" spellcheck="false" placeholder="e.g. Lithuania VAT 21% - IO">
+      </div>
+      <div id="test-erp-out"></div>
+      <button class="b sec" id="btn-test-erp" style="margin-top:4px">Test the test server</button>
+    </div>
+
+    <div class="card">
       <h2 class="g">Document field extraction (Accounts Documents)</h2>
       <div class="f"><label>Anthropic API key</label>
         <input id="s-extract-key" type="password" autocapitalize="off" spellcheck="false">
@@ -510,8 +547,10 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
           <option value="sales_invoice">Sales Invoice</option>
           <option value="customs_declaration">Customs Declaration</option>
           <option value="cd_invoice">Customs Declaration Invoice</option>
-          <option value="shipping_invoice">Shipping Invoice</option>
-          <option value="attachment">Attachment only (waybill, label, payment order…)</option>
+          <option value="shipping_invoice">Shipping / courier Invoice</option>
+          <option value="supplier_quotation">Supplier Quotation (test server)</option>
+          <option value="waybill">Waybill / airwaybill (test server: Purchase Receipt)</option>
+          <option value="attachment">Attachment only (label, payment order…)</option>
         </select>
       </div>
       <button class="b" id="btn-doc-pick">Choose a PDF or picture</button>
@@ -577,6 +616,29 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       </div>
       <p class="hint">Currency and total are shown so you can sanity-check the scan against the document — they are not written to ERPNext by this screen.</p>
 
+      <div id="d-new" style="display:none">
+        <h2 style="margin-top:16px" id="d-new-title">Test server</h2>
+        <div class="split" id="d-send-live-row"><span>Send to the live server (Accounts Document, as before)</span>
+          <label class="sw"><input type="checkbox" id="d-send-live" checked><i></i></label></div>
+        <div class="split" id="d-send-test-row"><span>Send to the test server <span class="hint" id="d-new-target"></span></span>
+          <label class="sw"><input type="checkbox" id="d-send-test" checked><i></i></label></div>
+        <p class="hint" id="d-new-hint"></p>
+        <div id="d-box-track" style="display:none"><div class="f"><label>Tracking / AWB number</label><input id="d-tracking_number" inputmode="numeric" autocapitalize="off" spellcheck="false"></div></div>
+        <div id="d-box-valid" style="display:none"><div class="f"><label>Valid until</label><input id="d-valid_until" placeholder="YYYY-MM-DD"></div></div>
+        <div id="d-box-lines" style="display:none">
+          <p class="hint" style="margin-bottom:6px"><b>Item lines</b> &mdash; each line is matched to an ERPNext Item by its item code: <span class="pill green">100 %</span> exists, <span class="pill orange">90&ndash;99 %</span> close, <span class="pill red">under 90 %</span> not found.</p>
+          <p class="hint" id="d-lines-hint"></p>
+          <div id="d-lines"></div>
+          <button class="b sec" id="btn-line-add" type="button">Add a line</button>
+          <div id="d-po-sum"></div>
+        </div>
+        <div id="d-box-awb" style="display:none">
+          <div id="d-awb-list"></div>
+          <div class="f"><label>Or enter the Purchase Order</label><input id="d-awb-po" placeholder="e.g. PO-08353" autocapitalize="characters" spellcheck="false"></div>
+          <button class="b sec" id="btn-awb-find" type="button">Search again</button>
+        </div>
+      </div>
+
       <div id="d-row-parent" style="display:none">
         <h2 style="margin-top:16px" id="d-parent-title">Record to file it under</h2>
         <div class="f"><label>Likely match</label>
@@ -627,12 +689,14 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 <script src="net.js"></script>
 <script src="erp.js"></script>
 <script src="accdoc.js"></script>
+<script src="newdocs.js"></script>
 <script src="extract.js"></script>
 <script src="cardvision.js"></script>
 <script src="pdf.min.js"></script>
 <script src="pdfview.js"></script>
 <script src="docrules.js"></script>
 <script src="camera.js"></script>
+<script src="newui.js"></script>
 <script src="docscan.js"></script>
 <script src="app.js"></script>
 </body>

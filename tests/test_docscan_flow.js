@@ -302,7 +302,7 @@ function page(opts) {
 	p = page({ pdfText: setText("sales-fedex-label"), acc: accStub([]) });
 	p.w.onDocPicked({ ok: true, name: "label.pdf", dataUrl: PDF });
 	await settle();
-	check("set: courier label becomes an attachment with only the record picker", p.v("d-type") === "attachment" &&
+	check("set: courier label becomes a waybill with only the record picker", p.v("d-type") === "waybill" &&
 		p.d.getElementById("d-box-supplier").style.display === "none" && p.d.getElementById("d-box-customer").style.display === "none" &&
 		p.d.getElementById("d-row-parent").style.display !== "none" && p.d.getElementById("d-row-main-extra").style.display === "none");
 	var att = null;

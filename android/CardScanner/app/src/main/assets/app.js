@@ -84,6 +84,8 @@ var DEFAULTS = {
 	erp_url: "", erp_mode: "token", erp_key: "", erp_secret: "",
 	erp_usr: "", erp_pwd: "", erp_org: "Customer", erp_supplier_type: "",
 	extract_key: "", extract_workspace: "",
+	/* the backup / test server for the new document flow (Purchase Invoice, Purchase Receipt, Supplier Quotation) */
+	erp_test_url: "", new_item_group: "", new_stock_uom: "Nos", new_service_item: "", new_company: "", new_taxes: "",
 	/* attach the photo of the card, and let the app fill small ERPNext lists */
 	erp_attach: true, erp_masters: true,
 	/* which of the three switches a new card starts with */
@@ -733,6 +735,12 @@ function paintSettings() {
 	$("s-erp-pwd").value = S.erp_pwd || "";
 	$("s-erp-org").value = S.erp_org || "Customer";
 	$("s-erp-supplier-type").value = S.erp_supplier_type || "";
+	$("s-test-url").value = S.erp_test_url || "";
+	$("s-new-group").value = S.new_item_group || "";
+	$("s-new-uom").value = S.new_stock_uom || "Nos";
+	$("s-new-service").value = S.new_service_item || "";
+	$("s-new-company").value = S.new_company || "";
+	$("s-new-taxes").value = S.new_taxes || "";
 	$("s-extract-key").value = S.extract_key || "";
 	$("s-extract-workspace").value = S.extract_workspace || "";
 	$("s-erp-attach").checked = S.erp_attach !== false;
@@ -773,6 +781,12 @@ function grabSettings(silent) {
 	S.erp_pwd = $("s-erp-pwd").value;
 	S.erp_org = $("s-erp-org").value;
 	S.erp_supplier_type = $("s-erp-supplier-type").value.trim();
+	S.erp_test_url = $("s-test-url").value.trim().replace(/\/+$/, "");
+	S.new_item_group = $("s-new-group").value.trim();
+	S.new_stock_uom = $("s-new-uom").value.trim() || "Nos";
+	S.new_service_item = $("s-new-service").value.trim();
+	S.new_company = $("s-new-company").value.trim();
+	S.new_taxes = $("s-new-taxes").value.trim();
 	S.extract_key = $("s-extract-key").value.trim();
 	S.extract_workspace = $("s-extract-workspace").value.trim();
 	S.erp_attach = $("s-erp-attach").checked;
@@ -781,7 +795,7 @@ function grabSettings(silent) {
 	S.sync_contact = $("s-sync-contact").checked;
 	S.sync_address = $("s-sync-address").checked;
 	saveSettings();
-	ERP.configure(S);
+	window.CS_ERP_CONFIGURE_ALL(S);
 	if (!silent) toast("Settings saved.", "good");
 }
 
@@ -1404,6 +1418,10 @@ function wire() {
 	$("btn-sync-one").onclick = syncOne;
 	$("btn-sync-all").onclick = syncAll;
 	$("btn-erp-test").onclick = testErp;
+	$("btn-test-erp").onclick = function () {
+		grabSettings(true);
+		window.CS_NEWUI.testConnection($("btn-test-erp"), $("test-erp-out"));
+	};
 	$("s-erp-mode").addEventListener("change", erpModeUi);
 	$("f-country").addEventListener("input", function () {
 		var t = NORM.normCountry($("f-country").value);
@@ -1414,7 +1432,7 @@ function wire() {
 }
 
 loadState();
-ERP.configure(S);
+window.CS_ERP_CONFIGURE_ALL(S);
 wire();
 if (window.CS_DOCSCAN) window.CS_DOCSCAN.init();
 paintCountryList();
