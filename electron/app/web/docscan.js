@@ -27,12 +27,13 @@ function busy(btn, on, label) {
 var DOC_TYPE_LABELS = {
 	purchase_invoice: "Purchase Invoice", proforma_invoice: "Proforma Invoice",
 	sales_invoice: "Sales Invoice", customs_declaration: "Customs Declaration",
-	cd_invoice: "Customs Declaration Invoice", shipping_invoice: "Shipping Invoice",
-	attachment: "Attachment"
+	cd_invoice: "Customs Declaration Invoice", shipping_invoice: "Shipping / courier Invoice",
+	supplier_quotation: "Supplier Quotation", waybill: "Waybill", attachment: "Attachment"
 };
 var SECTION_FOR = {
 	purchase_invoice: "main", proforma_invoice: "main", sales_invoice: "main",
-	customs_declaration: "cd", cd_invoice: "cdInvoice", shipping_invoice: "shipping", attachment: "attachment"
+	customs_declaration: "cd", cd_invoice: "cdInvoice", shipping_invoice: "shipping", attachment: "attachment",
+	waybill: "attachment", supplier_quotation: "quotation"
 };
 /* The supplier on a customs declaration is the customs authority, whoever the exporter or declarant is
    (it is matched to the closest Supplier in ERPNext). */
@@ -43,7 +44,7 @@ var NAMING_GUESS = { purchase_invoice: "PURCHASE-", proforma_invoice: "PURCHASE-
 var SERIES_GUESSES = ["PURCHASE-", "SALES-", "PROFORMA-"];
 
 var state = { dataUrl: null, fileName: "", supplierLink: "", customerLink: "", kind: "pdf", run: 0,
-	refs: [], poMatched: null, poUnmatched: null, attachmentKind: "" };
+	refs: [], poMatched: null, poUnmatched: null, attachmentKind: "", liveDone: false };
 /* similar customers matched at or above this score (or sharing a registration / tax ID)
    are picked automatically; anything lower is offered for the employee to choose */
 var AUTO_PICK = 0.80;
@@ -67,9 +68,13 @@ function seriesGuess() {
 	return NAMING_GUESS[t] || "PURCHASE-";
 }
 
+var filling = false;   /* true while fillFromExtraction runs: the new-flow panel is refreshed once, at its end */
+
 function updateTypeUi() {
 	var t = $("d-type").value, sec = SECTION_FOR[t];
-	var att = sec === "attachment";
+	var att = sec === "attachment", quo = sec === "quotation";
+	if (t === "waybill") state.attachmentKind = "waybill";
+	else if (t !== "attachment" && !att) state.attachmentKind = state.attachmentKind === "waybill" ? "" : state.attachmentKind;
 	$("d-row-main-extra").style.display = sec === "main" ? "" : "none";
 	var sales = salesMode();
 	$("d-row-direction").style.display = t === "proforma_invoice" ? "" : "none";
@@ -77,7 +82,7 @@ function updateTypeUi() {
 	$("d-row-sales").style.display = (sec === "main" && sales) ? "" : "none";
 	$("d-box-supplier").style.display = (sales || att) ? "none" : "";
 	$("d-box-customer").style.display = (sales && !att) ? "" : "none";
-	$("d-row-parent").style.display = sec === "main" ? "none" : "";
+	$("d-row-parent").style.display = (sec === "main" || quo) ? "none" : "";
 	$("d-parent-title").textContent = att ? "File it under this record" : "Parent record";
 	var cur = $("d-naming_series").value;
 	if (sec === "main" && (!cur || SERIES_GUESSES.indexOf(cur) >= 0)) {
@@ -87,7 +92,8 @@ function updateTypeUi() {
 		$("d-supplier_name").value = CUSTOMS_AUTHORITY;
 		checkSupplier();
 	}
-	if (sec !== "main") loadParentCandidates();
+	if (sec !== "main" && !quo) loadParentCandidates();
+	if (window.CS_NEWUI) window.CS_NEWUI.update(t, state.attachmentKind, filling);
 }
 
 function resetForm(keepStatus) {
@@ -112,7 +118,8 @@ function resetForm(keepStatus) {
 	$("d-parent-hint").textContent = "";
 	$("d-file-name").textContent = "";
 	state.dataUrl = null; state.fileName = ""; state.supplierLink = ""; state.customerLink = ""; state.kind = "pdf"; state.run++;
-	state.refs = []; state.poMatched = null; state.poUnmatched = null; state.attachmentKind = "";
+	state.refs = []; state.poMatched = null; state.poUnmatched = null; state.attachmentKind = ""; state.liveDone = false;
+	if (window.CS_NEWUI) window.CS_NEWUI.reset();
 	$("d-preview").style.display = "none"; $("d-preview").removeAttribute("src");
 	$("box-doc-form").style.display = "none";
 }
@@ -365,7 +372,7 @@ window.onDocPicked = handleDocPicked;
 
 var FIELD_KEYS = ["doc_type", "document_no", "document_date", "payment_due_date", "supplier_name",
 	"supplier_reg_number", "supplier_tax_id", "customer_name", "customer_reg_number", "customer_tax_id",
-	"purchase_order_reference", "currency", "total_amount", "attachment_kind"];
+	"purchase_order_reference", "currency", "total_amount", "attachment_kind", "tracking_number", "valid_until"];
 
 function has(v) { return v !== undefined && v !== null && v !== ""; }
 
@@ -452,6 +459,7 @@ function mergeFields(rules, ai) {
 		});
 	});
 	out.related_references = refs;
+	out.lines = Array.isArray(ai && ai.lines) ? ai.lines : [];
 	if (out.doc_type === "attachment") {
 		out.supplier_name = null; out.supplier_reg_number = null; out.supplier_tax_id = null;
 		out.customer_name = null; out.customer_reg_number = null; out.customer_tax_id = null;
@@ -472,12 +480,15 @@ function fillFromExtraction(x, soft) {
 		!(soft && main[x.doc_type] && !main[$("d-type").value])) {
 		$("d-type").value = x.doc_type;
 	}
+	if ($("d-type").value === "attachment" && x.attachment_kind === "waybill") $("d-type").value = "waybill";
 	/* a proforma carries its direction in who issued it; the type itself says nothing */
 	$("d-direction").value = x.issuer_is_ours ? "out" : "in";
 	state.refs = Array.isArray(x.related_references) ? x.related_references.slice() : [];
 	state.attachmentKind = x.attachment_kind || "";
 	$("d-supplier_name").value = "";
-	updateTypeUi();
+	if (window.CS_NEWUI) window.CS_NEWUI.setExtraction(x);
+	filling = true;
+	try { updateTypeUi(); } finally { filling = false; }
 	$("d-document_no").value = x.document_no || "";
 	$("d-document_date").value = x.document_date || "";
 	$("d-payment_due_date").value = x.payment_due_date || "";
@@ -510,7 +521,8 @@ function fillFromExtraction(x, soft) {
 	checkSupplier();
 	checkCustomer();
 	checkRefs();
-	if (section() !== "main") loadParentCandidates();
+	if (section() !== "main" && section() !== "quotation") loadParentCandidates();
+	if (window.CS_NEWUI) window.CS_NEWUI.update($("d-type").value, state.attachmentKind);
 }
 
 function note(text, color) {
@@ -591,86 +603,112 @@ function runExtraction() {
 
 /* ------------------------------------------------------------------ approve */
 
-function approve() {
-	var t = $("d-type").value, sec = SECTION_FOR[t];
-	var f = readFields();
-	var sales = salesMode();
+function stat(html) { $("d-stat").innerHTML = html; }
+function errP(msg) { return '<p class="hint" style="color:var(--err)">' + esc(msg) + "</p>"; }
+
+/* why the live (Accounts Document) send cannot start, or "" */
+function liveProblem(sec, f, sales) {
+	var bad = window.CS_ERP.ready();
 	if (sec === "attachment") {
-		if (!state.dataUrl) {
-			$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Choose, photograph or scan the document first.</p>';
-			return;
-		}
-		var bad0 = window.CS_ERP.ready();
-		if (bad0) { $("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">' + esc(bad0) + "</p>"; return; }
+		if (bad) return bad;
 		var parent0 = $("d-parent-manual").value.trim() || $("d-parent").value;
-		if (!parent0) {
-			$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Pick or enter the record to file this under first.</p>';
-			return;
-		}
-		busy($("btn-doc-approve"), true, "Sending…");
-		$("d-stat").innerHTML = "";
-		var kindLabel = { waybill: "Waybill / courier label", payment_order: "Payment order", other: "Supporting paper" }[state.attachmentKind] || "Supporting paper";
-		window.CS_ACC.attachToParent(parent0, state.dataUrl, state.fileName, kindLabel + (state.fileName ? " — " + state.fileName : "")).then(function (res) {
-			busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
-			var ok = res.file && res.file.state === "created";
-			$("d-stat").innerHTML = ok
-				? '<p class="hint" style="color:#1f8a4c">Saved as <b>' + esc(res.name) + "</b>, a child of <b>" + esc(res.parent || parent0) + ".</b></p>"
-				: '<p class="hint" style="color:var(--err)">The file could not be attached: ' +
-					esc((res.file && res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "unknown error") + "</p>";
-			if (ok) resetForm(true);
-		}).catch(function (e) {
-			busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
-			$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">' + esc(e.message || String(e)) + "</p>";
-		});
-		return;
+		return parent0 ? "" : "Pick or enter the record to file this under first.";
 	}
 	if (!f.documentNo || !f.documentDate || !(sales ? f.customerName : f.supplierName)) {
-		$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Document no., date and ' +
-			(sales ? "customer" : "supplier") + " name are required.</p>";
-		return;
+		return "Document no., date and " + (sales ? "customer" : "supplier") + " name are required.";
 	}
-	if (!state.dataUrl) {
-		$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Choose, photograph or scan the document first.</p>';
-		return;
+	if (bad) return bad;
+	if (sec !== "main" && !($("d-parent-manual").value.trim() || $("d-parent").value)) {
+		return "Pick or enter the parent purchase document first.";
 	}
-	var bad = window.CS_ERP.ready();
-	if (bad) { $("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">' + esc(bad) + "</p>"; return; }
+	return "";
+}
 
+/* The live send: an Accounts Document on the live server, exactly as before. Resolves { ok, name, lines }; never rejects. */
+function sendLive(t, sec, f) {
+	var lines = [];
+	function fail(e) {
+		var msg = (e && e.errors && e.errors.length && e.errors.map(function (x) { return x.message; }).join(" ")) ||
+			(e && e.message) || String(e);
+		return { ok: false, lines: [errP(msg)] };
+	}
+	if (sec === "attachment") {
+		var parent0 = $("d-parent-manual").value.trim() || $("d-parent").value;
+		var kindLabel = { waybill: "Waybill / courier label", payment_order: "Payment order", other: "Supporting paper" }[state.attachmentKind] || "Supporting paper";
+		return window.CS_ACC.attachToParent(parent0, state.dataUrl, state.fileName, kindLabel + (state.fileName ? " \u2014 " + state.fileName : "")).then(function (res) {
+			var ok = res.file && res.file.state === "created";
+			return ok
+				? { ok: true, name: res.name, lines: ['<p class="hint" style="color:#1f8a4c">Saved as <b>' + esc(res.name) + "</b>, a child of <b>" + esc(res.parent || parent0) + ".</b></p>"] }
+				: { ok: false, lines: [errP("The file could not be attached: " +
+					((res.file && res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "unknown error"))] };
+		}).catch(fail);
+	}
 	var parentName = "";
-	if (sec !== "main") {
-		parentName = $("d-parent-manual").value.trim() || $("d-parent").value;
-		if (!parentName) {
-			$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">Pick or enter the parent purchase document first.</p>';
-			return;
-		}
-	}
-
-	busy($("btn-doc-approve"), true, "Sending…");
-	$("d-stat").innerHTML = "";
+	if (sec !== "main") parentName = $("d-parent-manual").value.trim() || $("d-parent").value;
 	var task = sec === "main"
 		? window.CS_ACC.createMain(f, state.dataUrl, state.fileName)
 		: window.CS_ACC.createChild(sec, parentName, f, state.dataUrl, state.fileName);
-
-	task.then(function (res) {
-		busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
-		var lines = ['<p class="hint" style="color:#1f8a4c">Saved as <b>' + esc(res.name) + "</b> (" +
-			esc(DOC_TYPE_LABELS[t]) + (res.parent ? ", a child of <b>" + esc(res.parent) + "</b>" : ", parent document") + ").</p>"];
+	return task.then(function (res) {
+		lines.push('<p class="hint" style="color:#1f8a4c">Saved as <b>' + esc(res.name) + "</b> (" +
+			esc(DOC_TYPE_LABELS[t]) + (res.parent ? ", a child of <b>" + esc(res.parent) + "</b>" : ", parent document") + ").</p>");
 		if (res.file && res.file.state === "created") {
 			lines.push('<p class="hint" style="color:#1f8a4c">File attached.</p>');
 		} else if (res.file && res.file.state === "error") {
 			lines.push('<p class="hint" style="color:var(--err)">The file could not be attached: ' +
 				esc((res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "") + "</p>");
 		}
-		(res.notes || []).forEach(function (n) {
-			lines.push('<p class="hint">' + esc(n.message) + "</p>");
+		(res.notes || []).forEach(function (n) { lines.push('<p class="hint">' + esc(n.message) + "</p>"); });
+		return { ok: true, name: res.name, lines: lines };
+	}).catch(fail);
+}
+
+/* Approve: the live server (Accounts Document, the old way) and/or the test server (the new doctypes), as the two
+   switches say. The live part runs first and is never repeated: if the test server then fails, the form stays so the
+   test send can be retried on its own. */
+function approve() {
+	var t = $("d-type").value, sec = SECTION_FOR[t];
+	var f = readFields();
+	var sales = salesMode();
+	var NU = window.CS_NEWUI;
+	var tg = NU ? NU.targets(t, state.attachmentKind) : { live: sec !== "quotation", test: false, why: "" };
+	if (!tg.live && !tg.test) { stat(errP(tg.why || "Nothing to send.")); return; }
+	if (!state.dataUrl) { stat(errP("Choose, photograph or scan the document first.")); return; }
+	var live = tg.live && !state.liveDone;
+	var bad = live ? liveProblem(sec, f, sales) : "";
+	if (!bad && tg.test) bad = NU.problem(t, state.attachmentKind, f);
+	if (bad) { stat(errP(bad)); return; }
+
+	busy($("btn-doc-approve"), true, "Sending\u2026");
+	stat("");
+	var both = tg.live && tg.test;
+	var out = [];
+	function head(label) { return both ? '<p class="hint"><b>' + label + "</b></p>" : ""; }
+	var step = live ? sendLive(t, sec, f) : Promise.resolve(null);
+	step.then(function (lr) {
+		if (lr) {
+			out.push(head("Live server"));
+			out = out.concat(lr.lines);
+			if (lr.ok) { state.liveDone = true; if (both) $("d-send-live").checked = false; }
+		} else if (tg.live && state.liveDone) {
+			out.push('<p class="hint">The live server already has this document \u2014 not sent again.</p>');
+		}
+		if (!tg.test) return { ok: !lr || lr.ok };
+		if (lr && !lr.ok) {
+			out.push('<p class="hint warntext">Not sent to the test server because the live send failed.</p>');
+			return { ok: false };
+		}
+		out.push(head("Test server"));
+		return NU.send(t, state.attachmentKind, f, { dataUrl: state.dataUrl, name: state.fileName }).then(function (r) {
+			out = out.concat(r.lines);
+			return { ok: r.ok };
 		});
-		$("d-stat").innerHTML = lines.join("");
-		resetForm(true);
+	}).then(function (res) {
+		busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
+		stat(out.join(""));
+		if (res.ok) resetForm(true);
 	}).catch(function (e) {
 		busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
-		var msg = (e.errors && e.errors.length && e.errors.map(function (x) { return x.message; }).join(" ")) ||
-			e.message || String(e);
-		$("d-stat").innerHTML = '<p class="hint" style="color:var(--err)">' + esc(msg) + "</p>";
+		stat(out.join("") + errP((e && e.message) || String(e)));
 	});
 }
 
@@ -778,6 +816,7 @@ function init() {
 	$("btn-doc-cancel").onclick = function () { resetForm(); };
 	$("btn-doc-approve").onclick = approve;
 	$("btn-dupe-scan").onclick = scanDuplicateSuppliers;
+	if (window.CS_NEWUI) window.CS_NEWUI.init();
 
 	updateTypeUi();
 }

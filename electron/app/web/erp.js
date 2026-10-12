@@ -37,7 +37,9 @@
 
    Errors come back as a list of { field, message } so the app can mark the
    offending box instead of showing a wall of Frappe traceback. */
-window.CS_ERP = (function () {
+/* One instance per server: window.CS_ERP is the live server, window.CS_ERP_TEST the backup / test server
+   (see the end of this file). Each instance has its own address, login, doctype cache and session. */
+window.CS_ERP_MAKE = function () {
 "use strict";
 
 var N = window.CS_NORM;
@@ -369,6 +371,23 @@ function apiUrl(doctype, name, query) {
    as frappe.model.rename_doc for merging two documents. */
 function methodUrl(name) {
 	return cfg.url + "/api/method/" + name;
+}
+
+/* Calls a whitelisted Frappe method with a JSON body; resolves its `message`. */
+function callMethod(name, args) {
+	return login().then(function () {
+		return request("POST", methodUrl(name), authHeaders(true), JSON.stringify(args || {}), 60);
+	}).then(function (r) {
+		if (r.status >= 200 && r.status < 300) {
+			var j = {};
+			try { j = JSON.parse(r.body || "{}"); } catch (e) { j = {}; }
+			return j.message === undefined ? null : j.message;
+		}
+		var e = new Error("ERPNext refused " + name);
+		e.errors = toErrors(r.status, r.body, name);
+		e.status = r.status;
+		throw e;
+	});
 }
 
 function getList(doctype, filters, fields, limit, orderBy) {
@@ -1242,7 +1261,7 @@ return {
 		fetchDoc: fetchDoc, apiUrl: apiUrl, methodUrl: methodUrl, request: request,
 		authHeaders: authHeaders, describe: describe, clean: clean,
 		ensureLink: ensureLink, attachFile: attachFile, toErrors: toErrors,
-		login: login, ready: ready
+		login: login, ready: ready, callMethod: callMethod
 	},
 	_internals: { readError: readError, tracebackTail: tracebackTail,
 		splitException: splitException, fieldFromMessage: fieldFromMessage,
@@ -1253,4 +1272,18 @@ return {
 		fetchDoc: fetchDoc, CREATABLE: CREATABLE, FALLBACK_LINKS: FALLBACK_LINKS,
 		CONTACT_STATUS: CONTACT_STATUS, EXPLAIN: EXPLAIN }
 };
-})();
+};
+
+window.CS_ERP = window.CS_ERP_MAKE();
+window.CS_ERP_TEST = window.CS_ERP_MAKE();
+
+/* Applies the saved settings to both servers. The test server uses its own address
+   (erp_test_url) with the same login or API key as the live one. */
+window.CS_ERP_CONFIGURE_ALL = function (S) {
+	window.CS_ERP.configure(S);
+	var t = {};
+	Object.keys(S || {}).forEach(function (k) { t[k] = S[k]; });
+	t.erp_url = S && S.erp_test_url ? S.erp_test_url : "";
+	window.CS_ERP_TEST.configure(t);
+};
+window.CS_ERP_TEST_ENABLED = function (S) { return !!String((S && S.erp_test_url) || "").trim(); };

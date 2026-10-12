@@ -27,7 +27,7 @@ var ANTHROPIC_VERSION = "2023-06-01";
 var MAX_B64 = 26 * 1000 * 1000;   // the API's request limit is 32 MB; leave room for the prompt
 
 var DOC_TYPES = ["purchase_invoice", "proforma_invoice", "sales_invoice",
-	"customs_declaration", "cd_invoice", "shipping_invoice", "attachment"];
+	"customs_declaration", "cd_invoice", "shipping_invoice", "supplier_quotation", "attachment"];
 
 var SCHEMA_PROMPT =
 "You are reading an accounts document for Integrated Optics UAB (Vilnius, Lithuania; company code 302833442; " +
@@ -54,6 +54,9 @@ var SCHEMA_PROMPT =
 "  \"attachment_kind\": for doc_type \"attachment\" only: \"waybill\", \"payment_order\" or \"other\"; else \"\",\n" +
 "  \"currency\": ISO 4217 code, or null,\n" +
 "  \"total_amount\": the gross total payable as a plain JSON number, or null,\n" +
+"  \"tracking_number\": the shipment's waybill / airwaybill (AWB) / tracking number, digits only without spaces, or null,\n" +
+"  \"valid_until\": for a supplier_quotation: the date the offer is valid until, ISO 8601, or null; else null,\n" +
+"  \"lines\": a JSON array with one object per goods or service line (see LINES below); [] if the document has none,\n" +
 "  \"language\": \"en\", \"lt\", \"de\" or \"other\" — the main language of the document,\n" +
 "  \"confidence\": your own confidence in this extraction, 0 to 1,\n" +
 "  \"notes\": in English, anything a human should double-check, or \"\"\n" +
@@ -75,6 +78,9 @@ var SCHEMA_PROMPT =
 "authority) and total_amount null.\n" +
 "- cd_invoice: an invoice FROM a customs broker or agent for clearing a declaration: \"Muitinės tarpininko / " +
 "muitinės paslaugų sąskaita\", \"Zollabfertigungsrechnung\", \"Customs clearance / broker invoice\".\n" +
+"- supplier_quotation: a supplier's offer, not yet an invoice: \"Pasiūlymas\", \"Komercinis pasiūlymas\", \"Kainos pasiūlymas\", " +
+"\"Angebot\", \"Preisangebot\", \"Quotation\", \"Quote\", \"Offer\", \"Price quote\". Its document_no is the quotation number, " +
+"document_date its date, valid_until the date it is valid until.\n" +
 "- attachment: a supporting paper that is NOT an invoice or a declaration and is only filed with the record: a waybill or " +
 "courier label (DHL / FedEx / UPS / TNT, \"Važtaraštis\", \"Frachtbrief\", CMR), or a bank payment order / transfer " +
 "confirmation (\"Mokėjimo nurodymas\", \"Payment Order\", \"Zahlungsauftrag\"). Read its date, amount and currency, " +
@@ -98,6 +104,20 @@ var SCHEMA_PROMPT =
 "and its codes. This also holds when UAB bills the GmbH.\n" +
 "- Copy supplier_name exactly as printed, with its legal form (UAB, AB, MB, IĮ, VšĮ, GmbH, AG, KG, Ltd, …) and " +
 "with Lithuanian/German letters intact (ą č ę ė į š ų ū ž ä ö ü ß).\n\n" +
+"LINES: one object per line of goods or services, in the order printed, each with exactly these keys:\n" +
+"{\"item_code\": the item / part / article number printed on the line (\"Prekės kodas\", \"Artikulas\", \"Art.-Nr.\", \"Part no.\", " +
+"\"Item code\", \"SKU\"), exactly as printed, or null if the line has none,\n" +
+" \"description\": the line's description, \n" +
+" \"quantity\": a JSON number,\n" +
+" \"unit\": the unit as printed (pcs, vnt., Stk, kg …) or null,\n" +
+" \"unit_price\": the NET price of ONE unit as a JSON number, in the document's currency (before VAT),\n" +
+" \"line_total\": the net amount of the line as a JSON number, or null,\n" +
+" \"po_reference\": OUR purchase order number printed on that line, normalised like PO-08353, or null}\n" +
+"Do not list totals, subtotals, VAT / tax rows, discounts-on-total or payment terms as lines. On a courier or freight " +
+"invoice every charge (freight, fuel surcharge, duties paid, handling …) is a line without an item_code. On a " +
+"supplier_quotation with quantity price breaks (for example 1+ at 1.00, 100+ at 0.80, 1000+ at 0.60) give ONE line per " +
+"quantity tier — the same item_code repeated, each with that tier's quantity and unit price. Customs declarations and " +
+"waybills have no lines (use []).\n\n" +
 "FIELD LABELS in the three languages:\n" +
 "- document_no: \"Sąskaitos Nr.\", \"Dokumento Nr.\", \"Serija … Nr. …\" | \"Rechnungsnummer\", \"Rechnungs-Nr.\", " +
 "\"Belegnummer\" | \"Invoice No./Number\". If a series and a number are printed separately (\"Serija E Nr. 202604-122\") " +
