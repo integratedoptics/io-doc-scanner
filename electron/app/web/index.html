@@ -118,6 +118,13 @@ input.warn{border-color:#d98300;background:rgba(217,131,0,.10)}
 .seg button{border:0;background:#fff;padding:6px 12px;font-size:13px;color:var(--dgrey);cursor:pointer}
 .seg button.on{background:var(--black);color:#fff}
 .li select{width:100%;margin-top:4px}
+.uhist{max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;background:#fff;-webkit-overflow-scrolling:touch}
+.uhist.open{max-height:70vh}
+.uhrow{padding:9px 11px;border-bottom:1px solid var(--line)}.uhrow:last-child{border-bottom:0}
+.uhrow .hh{display:flex;gap:8px;align-items:center}.uhrow .ht{font-size:12px;color:#6b7280}
+.uhrow .hm{margin:4px 0 2px;font-size:14px;word-break:break-word}
+.uhrow .hs{font-size:13px;margin-top:2px;word-break:break-word}.uhrow .hok{color:#1f8a4c}.uhrow .herr{color:var(--err)}
+.uhrow .hn{font-size:12px;color:#8a5a00;margin-top:2px;word-break:break-word}
 button.lnk{background:none;border:0;color:var(--err);font-size:12px;padding:6px 0 0;cursor:pointer}
 label.pick{display:block;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
 .mand{color:var(--orange);font-weight:bold}
@@ -494,6 +501,21 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <div class="f"><label>Purchase taxes template (optional)</label>
         <input id="s-new-taxes" autocapitalize="off" spellcheck="false" placeholder="e.g. Lithuania VAT 21% - IO">
       </div>
+      <div class="f"><label>VAT account (optional)</label>
+        <input id="s-new-vat" autocapitalize="off" spellcheck="false" placeholder="e.g. 2441 - PVM pirkimų - IO (found automatically when empty)">
+      </div>
+      <div class="f"><label>Shipping &amp; handling account (optional)</label>
+        <input id="s-new-ship" autocapitalize="off" spellcheck="false" placeholder="account for shipping, freight, handling, packaging">
+      </div>
+      <div class="f"><label>Other charges account (optional)</label>
+        <input id="s-new-other" autocapitalize="off" spellcheck="false" placeholder="insurance, duties, fees; also used for discounts">
+      </div>
+      <div class="f"><label>Shipping &amp; other charges count as</label>
+        <select id="s-new-chcat"><option value="Total">Total only (just added to the total)</option><option value="Valuation and Total">Valuation and Total (added to the item cost)</option></select>
+      </div>
+      <div class="f"><label>Cost center for the charge rows (optional)</label>
+        <input id="s-new-cc" autocapitalize="off" spellcheck="false" placeholder="e.g. Main - IO">
+      </div>
       <div id="test-erp-out"></div>
       <button class="b sec" id="btn-test-erp" style="margin-top:4px">Test the test server</button>
     </div>
@@ -632,6 +654,12 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
           <button class="b sec" id="btn-line-add" type="button">Add a line</button>
           <div id="d-po-sum"></div>
         </div>
+        <div id="d-box-charges" style="display:none">
+          <p class="hint" style="margin:12px 0 6px"><b>VAT, shipping and other charges</b> &mdash; each row goes into the document's &ldquo;Purchase Taxes and Charges&rdquo; table with the printed amount (a discount is deducted). The accounts are set in Settings.</p>
+          <div id="d-charges"></div>
+          <button class="b sec" id="btn-charge-add" type="button">Add a charge</button>
+          <div id="d-charge-sum"></div>
+        </div>
         <div id="d-box-awb" style="display:none">
           <div id="d-awb-list"></div>
           <div class="f"><label>Or enter the Purchase Order</label><input id="d-awb-po" placeholder="e.g. PO-08353" autocapitalize="characters" spellcheck="false"></div>
@@ -656,6 +684,13 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <button class="b ok" id="btn-doc-approve">Approve &amp; send to ERPNext</button>
       <button class="b sec" id="btn-doc-extract">Re-run extraction</button>
       <button class="b sec" id="btn-doc-cancel">Discard</button>
+    </div>
+
+    <div class="card" id="d-hist-card">
+      <h2>Upload history</h2>
+      <p class="hint" id="d-hist-sum"></p>
+      <div id="d-hist" class="uhist"></div>
+      <button class="b sec" id="btn-hist-more" type="button" style="display:none;margin-top:8px">Show older records</button>
     </div>
 
     <details>
@@ -696,6 +731,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 <script src="pdfview.js"></script>
 <script src="docrules.js"></script>
 <script src="camera.js"></script>
+<script src="history.js"></script>
 <script src="newui.js"></script>
 <script src="docscan.js"></script>
 <script src="app.js"></script>

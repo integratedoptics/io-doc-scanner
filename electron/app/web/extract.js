@@ -57,6 +57,7 @@ var SCHEMA_PROMPT =
 "  \"tracking_number\": the shipment's waybill / airwaybill (AWB) / tracking number, digits only without spaces, or null,\n" +
 "  \"valid_until\": for a supplier_quotation: the date the offer is valid until, ISO 8601, or null; else null,\n" +
 "  \"lines\": a JSON array with one object per goods or service line (see LINES below); [] if the document has none,\n" +
+"  \"charges\": a JSON array with one object per tax or additional charge printed on the document (see CHARGES below); [] if none,\n" +
 "  \"language\": \"en\", \"lt\", \"de\" or \"other\" — the main language of the document,\n" +
 "  \"confidence\": your own confidence in this extraction, 0 to 1,\n" +
 "  \"notes\": in English, anything a human should double-check, or \"\"\n" +
@@ -113,11 +114,27 @@ var SCHEMA_PROMPT =
 " \"unit_price\": the NET price of ONE unit as a JSON number, in the document's currency (before VAT),\n" +
 " \"line_total\": the net amount of the line as a JSON number, or null,\n" +
 " \"po_reference\": OUR purchase order number printed on that line, normalised like PO-08353, or null}\n" +
-"Do not list totals, subtotals, VAT / tax rows, discounts-on-total or payment terms as lines. On a courier or freight " +
-"invoice every charge (freight, fuel surcharge, duties paid, handling …) is a line without an item_code. On a " +
+"Do not list totals, subtotals, VAT / tax rows, shipping / handling rows, discounts-on-total or payment terms as lines " +
+"(those go to CHARGES). On a shipping_invoice or cd_invoice the services billed (freight, fuel surcharge, customs " +
+"clearance fee, duties paid on our behalf …) ARE the lines, each without an item_code. On a " +
 "supplier_quotation with quantity price breaks (for example 1+ at 1.00, 100+ at 0.80, 1000+ at 0.60) give ONE line per " +
 "quantity tier — the same item_code repeated, each with that tier's quantity and unit price. Customs declarations and " +
 "waybills have no lines (use []).\n\n" +
+"CHARGES: the amounts that are NOT goods or service lines but change what is payable, one object per amount, each with exactly " +
+"these keys:\n" +
+"{\"kind\": \"vat\", \"shipping\", \"handling\", \"insurance\", \"duty\", \"discount\" or \"other\",\n" +
+" \"description\": the label as printed (\"PVM 21%\", \"Pristatymas\", \"Shipping & handling\"),\n" +
+" \"rate\": for vat the percentage as a number (21 for 21 %), else null,\n" +
+" \"amount\": a JSON number in the document's currency; positive when it is added to the total, NEGATIVE for a discount}\n" +
+"- vat: \"PVM\", \"MwSt.\", \"USt.\", \"VAT\", \"Tax\" — one object per VAT rate (the VAT AMOUNT, not the base). Leave out " +
+"0 % VAT and reverse-charge lines (amount 0).\n" +
+"- shipping: \"Pristatymas\", \"Transportavimas\", \"Pervežimas\", \"Versand\", \"Fracht\", \"Shipping\", \"Freight\", " +
+"\"Delivery\", \"Fuel surcharge\". handling: \"Pakavimas\", \"Apdorojimas\", \"Bearbeitungsgebühr\", \"Handling\", " +
+"\"Packaging\". insurance: \"Draudimas\", \"Versicherung\", \"Insurance\". duty: \"Muito mokestis\", \"Zoll\", \"Customs duty\". " +
+"discount: \"Nuolaida\", \"Rabatt\", \"Discount\" on the whole document. other: bank fees, surcharges, rounding, anything else " +
+"added or deducted.\n" +
+"- An amount is EITHER a line OR a charge, never both. The sum of all line_total values plus all charges should equal " +
+"total_amount; if it does not, say so in notes. Customs declarations and waybills have no charges (use []).\n\n" +
 "FIELD LABELS in the three languages:\n" +
 "- document_no: \"Sąskaitos Nr.\", \"Dokumento Nr.\", \"Serija … Nr. …\" | \"Rechnungsnummer\", \"Rechnungs-Nr.\", " +
 "\"Belegnummer\" | \"Invoice No./Number\". If a series and a number are printed separately (\"Serija E Nr. 202604-122\") " +

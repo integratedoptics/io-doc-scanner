@@ -442,6 +442,32 @@ function createMain(fields, fileDataUrl, fileName) {
 	});
 }
 
+/* Creates the document as is; when ERPNext answers that the main Document No / Document Date (mandatory
+   fields in its doctype) are missing, tries once more with the stand-in values (the parent's) and says so
+   in a note. */
+function createWithMandatory(e, doc, notes, standIn) {
+	function missing(err) {
+		var out = [];
+		((err && err.errors) || []).forEach(function (x) {
+			var m = String((x && x.message) || "");
+			/* "Value missing for Accounts Document: Document No", "Accounts Document: Document No, Document Date" ... */
+			if (!/missing|mandatory|required|accounts document/i.test(m)) return;
+			if (/(?:^|[:,]\s*)document no\b/i.test(m)) out.push("document_no");
+			if (/(?:^|[:,]\s*)document date\b/i.test(m)) out.push("document_date");
+		});
+		return out;
+	}
+	return e.createDoc(DOCTYPE, doc, notes).catch(function (err) {
+		var need = missing(err).filter(function (k) { return standIn[k] && !doc[k]; });
+		if (!need.length) throw err;
+		need.forEach(function (k) { doc[k] = standIn[k]; });
+		notes.push({ field: need[0], message: "ERPNext requires \u201cDocument No\u201d and \u201cDocument Date\u201d on every record, so " +
+			"the parent invoice's (" + need.map(function (k) { return standIn[k]; }).join(", ") + ") were used there. " +
+			"To leave them empty, untick \u201cMandatory\u201d for these two fields in Customize Form." });
+		return e.createDoc(DOCTYPE, doc, notes);
+	});
+}
+
 /* Creates a CHILD Accounts Document for a customs declaration / CD invoice / shipping invoice (section) or a
    plain supporting paper (section "attachment") under an existing parent: parent_document = parent, the same
    naming series as the parent, only this document's own section filled, the file attached to that section's
@@ -464,17 +490,20 @@ function createChild(section, parentName, fields, fileDataUrl, fileName) {
 				" — pick that parent record instead.");
 		}
 		var patch = attachment ? { comment: fields.comment || "" } : sectionPatch(section, fields);
-		/* every Accounts Document needs its own Document No and Document Date (mandatory in ERPNext), also a
-		   child whose real number lives in its section's fields: use this document's own, and for a plain
-		   supporting paper (no number of its own) the parent's */
-		var gn = fields.documentNo || parent.document_no, gd = fields.documentDate || parent.document_date;
-		if (gn) patch[SECTIONS.main.document_no] = gn;
-		if (gd) patch[SECTIONS.main.date] = gd;
+		/* A customs declaration / CD invoice / shipping invoice fills ONLY its own section's number and date
+		   (CD Document No, CD Date, ...): the main "Document No" and "Document Date" stay empty. Both are
+		   mandatory in some ERPNext set-ups; only when the server says so (createWithMandatory) the parent
+		   invoice's own number and date are used as stand-ins, never this document's number. A plain
+		   supporting paper has no number of its own, so it carries the parent's right away. */
+		var standIn = {};
+		if (parent.document_no) standIn[SECTIONS.main.document_no] = parent.document_no;
+		if (parent.document_date) standIn[SECTIONS.main.date] = parent.document_date;
+		if (attachment) Object.keys(standIn).forEach(function (k) { patch[k] = standIn[k]; });
 		patch.naming_series = parent.naming_series || fields.namingSeries || "PURCHASE-";
 		patch.parent_document = parentName;
 		var fileField = attachment ? SECTIONS.main.file : SECTIONS[section].file;
 		return e.clean(DOCTYPE, patch, []).then(function (c) {
-			return e.createDoc(DOCTYPE, c.doc, c.notes).then(function (name) {
+			return createWithMandatory(e, c.doc, c.notes, standIn).then(function (name) {
 				return e.attachFile(DOCTYPE, name, fileDataUrl, fileName, fileField).then(function (fileResult) {
 					var out = { name: name, parent: parentName, section: section, file: fileResult, notes: c.notes };
 					/* the parent record shows its children: its own cd_file / cd_invoice_file / shipping_invoice_file

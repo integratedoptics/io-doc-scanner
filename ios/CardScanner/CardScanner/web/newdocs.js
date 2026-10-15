@@ -57,7 +57,12 @@ function cfg() {
 		stockUom: String(s.new_stock_uom || "Nos").trim() || "Nos",
 		serviceItem: String(s.new_service_item || "").trim(),
 		company: String(s.new_company || "").trim(),
-		taxes: String(s.new_taxes || "").trim()
+		taxes: String(s.new_taxes || "").trim(),
+		vatAccount: String(s.new_vat_account || "").trim(),
+		shippingAccount: String(s.new_shipping_account || "").trim(),
+		otherAccount: String(s.new_other_account || "").trim(),
+		chargeCategory: /^valuation/i.test(String(s.new_charge_category || "")) ? "Valuation and Total" : "Total",
+		costCenter: String(s.new_cost_center || "").trim()
 	};
 }
 
@@ -389,6 +394,136 @@ function exchangeRate(from, to, date) {
 		.then(function (r) { return num(r); }, function () { return null; });
 }
 
+/* ------------------------------------------- taxes and charges (Purchase Taxes and Charges) */
+
+/* What the document prints besides its item lines — VAT per rate, shipping, handling, insurance, duties, discounts,
+   other fees — becomes the rows of the document's "Purchase Taxes and Charges" table: charge type "Actual" with the
+   printed amount, so ERPNext's total equals the document's. A discount (or any negative amount) is a "Deduct" row. */
+var CHARGE_KINDS = ["vat", "shipping", "handling", "insurance", "duty", "discount", "other"];
+var CHARGE_LABELS = { vat: "VAT", shipping: "Shipping", handling: "Handling", insurance: "Insurance", duty: "Customs duty", discount: "Discount", other: "Other charge" };
+
+/* one charge as read by the AI or typed in the review list */
+function normalizeCharge(c) {
+	c = c || {};
+	var kind = String(c.kind || "").toLowerCase().trim();
+	if (CHARGE_KINDS.indexOf(kind) < 0) kind = "other";
+	var amount = num(c.amount != null ? c.amount : c.tax_amount);
+	if (amount !== null && kind === "discount" && amount > 0) amount = -amount;
+	return {
+		kind: kind,
+		description: String(c.description || "").replace(/\s+/g, " ").trim(),
+		rate: num(c.rate),
+		amount: amount === null ? null : round(amount, 2)
+	};
+}
+
+/* the charges that have an amount (a row with no amount, or 0, is dropped) */
+function normalizeCharges(list) {
+	return (Array.isArray(list) ? list : []).map(normalizeCharge).filter(function (c) { return c.amount !== null && c.amount !== 0; });
+}
+
+function chargesSum(charges) {
+	return round((charges || []).reduce(function (t, c) { return t + (c.amount || 0); }, 0), 2);
+}
+
+function linesSum(lines) {
+	return round((lines || []).reduce(function (t, l) {
+		var a = l.qty > 0 && l.rate !== null && l.rate !== undefined ? l.qty * l.rate : (l.amount || 0);
+		return t + (isFinite(a) ? a : 0);
+	}, 0), 2);
+}
+
+/* Do lines + charges add up to the document's total? { lines, charges, sum, total, diff, ok }; ok is null when no total is known */
+function totalCheck(lines, charges, total) {
+	var l = linesSum(lines), c = chargesSum(charges), sum = round(l + c, 2);
+	var t = total === undefined || total === null || total === "" ? null : num(total);
+	var diff = t === null ? null : round(sum - t, 2);
+	return { lines: l, charges: c, sum: sum, total: t, diff: diff, ok: diff === null ? null : Math.abs(diff) <= 0.02 };
+}
+
+var KIND_WORDS = {
+	vat: /vat|pvm|mwst|tax/i,
+	shipping: /freight|shipping|transport|deliver|carriage|courier|postage|pervež|siunt|vežim|fracht|versand/i,
+	handling: /handling|packag|pakav|apdorojim|bearbeit/i,
+	insurance: /insur|draud|versicher/i,
+	duty: /duty|duties|customs|muit|zoll/i
+};
+
+var accountCache = {};
+
+/* The company's accounts and the rows of the configured tax template, read once per company. */
+function accountInfo(company) {
+	var c = cfg(), key = company + "\u0000" + c.taxes;
+	if (accountCache[key]) return accountCache[key];
+	var filters = [["is_group", "=", 0]];
+	if (company) filters.push(["company", "=", company]);
+	var accounts = T().getList("Account", filters, ["name", "account_type", "root_type"], 0).catch(function () { return []; });
+	var tpl = c.taxes
+		? T().fetchDoc("Purchase Taxes and Charges Template", c.taxes).then(function (d) { return (d && d.taxes) || []; }, function () { return []; })
+		: Promise.resolve([]);
+	var p = Promise.all([accounts, tpl]).then(function (r) { return { accounts: r[0] || [], template: r[1] || [] }; });
+	accountCache[key] = p;
+	return p;
+}
+
+function forgetAccounts() { accountCache = {}; }
+
+/* The Account for a charge: the one set in Settings; else the row of the tax template that looks like it; else an
+   account of the company whose name says so. "" when nothing fits (the row is then left out, with a note). */
+function chargeAccount(kind, info) {
+	var c = cfg();
+	var set = kind === "vat" ? c.vatAccount
+		: (kind === "shipping" || kind === "handling") ? (c.shippingAccount || c.otherAccount)
+		: (c.otherAccount || c.shippingAccount);
+	if (set) return set;
+	var words = KIND_WORDS[kind];
+	if (!words) return "";
+	var tpl = info.template || [], i;
+	if (kind === "vat") {
+		for (i = 0; i < tpl.length; i++) if (num(tpl[i].rate) > 0 && tpl[i].account_head) return tpl[i].account_head;
+	}
+	for (i = 0; i < tpl.length; i++) if (tpl[i].account_head && words.test(tpl[i].account_head)) return tpl[i].account_head;
+	var acc = (info.accounts || []).filter(function (a) { return words.test(a.name) && a.root_type !== "Income" && a.root_type !== "Equity"; });
+	if (kind === "vat") {
+		var tax = acc.filter(function (a) { return a.account_type === "Tax"; });
+		if (tax.length) acc = tax;
+		var input = acc.filter(function (a) { return /input|pirk|receiv|ties|vorsteuer/i.test(a.name); });
+		if (input.length) acc = input;
+	}
+	return acc.length ? acc[0].name : "";
+}
+
+/* The rows for the "taxes" table. Charges with no account are left out and reported in `notes`. Resolves [rows]. */
+function taxRows(charges, company, notes) {
+	charges = normalizeCharges(charges);
+	if (!charges.length) return Promise.resolve([]);
+	var c = cfg();
+	return accountInfo(company).then(function (info) {
+		var rows = [];
+		charges.forEach(function (ch) {
+			var acct = chargeAccount(ch.kind, info);
+			var label = ch.description || CHARGE_LABELS[ch.kind];
+			if (!acct) {
+				notes.push({ field: "taxes", message: "No account for “" + label + "” (" + ch.amount + ") — set the " +
+					(ch.kind === "vat" ? "VAT account" : "shipping / other charges account") + " in Settings (test server). This row was left out." });
+				return;
+			}
+			if (ch.kind === "vat" && ch.rate && label.indexOf("%") < 0) label += " " + ch.rate + "%";
+			var row = {
+				category: ch.kind === "vat" ? "Total" : c.chargeCategory,
+				add_deduct_tax: ch.amount < 0 ? "Deduct" : "Add",
+				charge_type: "Actual",
+				account_head: acct,
+				description: label,
+				tax_amount: Math.abs(ch.amount)
+			};
+			if (c.costCenter) row.cost_center = c.costCenter;
+			rows.push(row);
+		});
+		return rows;
+	});
+}
+
 /* ------------------------------------------------ Purchase Invoice */
 
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -435,9 +570,10 @@ function applyFinal(lines, made) {
 }
 
 /* fields: { documentNo, documentDate, paymentDueDate, supplierName, supplierCode, currency, totalAmount, trackingNumber }
-   lines: reviewed lines (matchLine / the review screen). file: { dataUrl, name }.
+   lines: reviewed lines (matchLine / the review screen). charges: the VAT / shipping / other rows (see taxRows).
+   file: { dataUrl, name }.
    Resolves { name, notes, file, created: [item names], note } */
-function createPurchaseInvoice(fields, lines, file) {
+function createPurchaseInvoice(fields, lines, file, charges) {
 	var notes = [];
 	var bad = checkLines(lines);
 	if (bad) return Promise.reject(new Error(bad));
@@ -460,8 +596,10 @@ function createPurchaseInvoice(fields, lines, file) {
 		return exchangeRate(fields.currency, ci.currency, posting).then(function (rate) {
 			return Promise.all([
 				resolveField("Purchase Invoice", ["tracking_awb"], "tracking_awb_no"),
-				resolveField("Purchase Invoice", ["scanned_invoice"], "scanned_invoice")
+				resolveField("Purchase Invoice", ["scanned_invoice"], "scanned_invoice"),
+				taxRows(charges, ci.name, notes)
 			]).then(function (names) {
+				var taxes = names[2];
 				var doc = {
 					supplier: supplier,
 					bill_no: fields.documentNo,
@@ -471,7 +609,8 @@ function createPurchaseInvoice(fields, lines, file) {
 					currency: fields.currency || undefined,
 					conversion_rate: rate || undefined,
 					company: ci.name || undefined,
-					taxes_and_charges: c.taxes || undefined,
+					taxes_and_charges: taxes.length ? undefined : (c.taxes || undefined),
+					taxes: taxes.length ? taxes : undefined,
 					items: itemRows(lines)
 				};
 				if (fields.paymentDueDate && fields.paymentDueDate >= posting) doc.due_date = fields.paymentDueDate;
@@ -508,7 +647,7 @@ function createPurchaseInvoice(fields, lines, file) {
 
 /* fields: { documentNo (the supplier's quotation number), documentDate, supplierName, supplierCode, currency, validUntil }.
    Several lines of the same item (quantity price breaks) become several rows, each with its quantity and price. */
-function createSupplierQuotation(fields, lines, file) {
+function createSupplierQuotation(fields, lines, file, charges) {
 	var notes = [];
 	var bad = checkLines(lines);
 	if (bad) return Promise.reject(new Error(bad));
@@ -527,7 +666,8 @@ function createSupplierQuotation(fields, lines, file) {
 		return companyInfo();
 	}).then(function (ci) {
 		var date = fields.documentDate || today();
-		return exchangeRate(fields.currency, ci.currency, date).then(function (rate) {
+		return Promise.all([exchangeRate(fields.currency, ci.currency, date), taxRows(charges, ci.name, notes)]).then(function (rt) {
+			var rate = rt[0], taxes = rt[1];
 			var doc = {
 				supplier: supplier,
 				transaction_date: date,
@@ -536,7 +676,8 @@ function createSupplierQuotation(fields, lines, file) {
 				conversion_rate: rate || undefined,
 				company: ci.name || undefined,
 				valid_till: fields.validUntil || undefined,
-				taxes_and_charges: c.taxes || undefined,
+				taxes_and_charges: taxes.length ? undefined : (c.taxes || undefined),
+				taxes: taxes.length ? taxes : undefined,
 				items: itemRows(lines, function (row, l) { if (l.code) row.supplier_part_no = l.code; })
 			};
 			return T().clean("Supplier Quotation", doc, notes).then(function (cl) {
@@ -658,6 +799,8 @@ return {
 	createSupplierQuotation: createSupplierQuotation,
 	findByAwb: findByAwb, describeOrder: describeOrder, createReceipts: createReceipts,
 	attachToReceipts: attachToReceipts, testServer: testServer, errText: errText,
+	CHARGE_KINDS: CHARGE_KINDS, CHARGE_LABELS: CHARGE_LABELS, normalizeCharge: normalizeCharge, normalizeCharges: normalizeCharges,
+	chargesSum: chargesSum, linesSum: linesSum, totalCheck: totalCheck, taxRows: taxRows, forgetAccounts: forgetAccounts,
 	_internals: { lev: lev, squash: squash, num: num, itemRows: itemRows, stripLocal: stripLocal, applyFinal: applyFinal }
 };
 })();

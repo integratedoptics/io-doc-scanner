@@ -85,7 +85,7 @@ var DEFAULTS = {
 	erp_usr: "", erp_pwd: "", erp_org: "Customer", erp_supplier_type: "",
 	extract_key: "", extract_workspace: "",
 	/* the backup / test server for the new document flow (Purchase Invoice, Purchase Receipt, Supplier Quotation) */
-	erp_test_url: "", new_item_group: "", new_stock_uom: "Nos", new_service_item: "", new_company: "", new_taxes: "",
+	erp_test_url: "", new_item_group: "", new_stock_uom: "Nos", new_service_item: "", new_company: "", new_taxes: "", new_vat_account: "", new_shipping_account: "", new_other_account: "", new_charge_category: "Total", new_cost_center: "",
 	/* attach the photo of the card, and let the app fill small ERPNext lists */
 	erp_attach: true, erp_masters: true,
 	/* which of the three switches a new card starts with */
@@ -741,6 +741,11 @@ function paintSettings() {
 	$("s-new-service").value = S.new_service_item || "";
 	$("s-new-company").value = S.new_company || "";
 	$("s-new-taxes").value = S.new_taxes || "";
+	$("s-new-vat").value = S.new_vat_account || "";
+	$("s-new-ship").value = S.new_shipping_account || "";
+	$("s-new-other").value = S.new_other_account || "";
+	$("s-new-chcat").value = S.new_charge_category || "Total";
+	$("s-new-cc").value = S.new_cost_center || "";
 	$("s-extract-key").value = S.extract_key || "";
 	$("s-extract-workspace").value = S.extract_workspace || "";
 	$("s-erp-attach").checked = S.erp_attach !== false;
@@ -787,6 +792,11 @@ function grabSettings(silent) {
 	S.new_service_item = $("s-new-service").value.trim();
 	S.new_company = $("s-new-company").value.trim();
 	S.new_taxes = $("s-new-taxes").value.trim();
+	S.new_vat_account = $("s-new-vat").value.trim();
+	S.new_shipping_account = $("s-new-ship").value.trim();
+	S.new_other_account = $("s-new-other").value.trim();
+	S.new_charge_category = $("s-new-chcat").value || "Total";
+	S.new_cost_center = $("s-new-cc").value.trim();
 	S.extract_key = $("s-extract-key").value.trim();
 	S.extract_workspace = $("s-extract-workspace").value.trim();
 	S.erp_attach = $("s-erp-attach").checked;

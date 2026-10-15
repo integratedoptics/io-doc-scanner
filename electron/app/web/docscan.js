@@ -460,6 +460,7 @@ function mergeFields(rules, ai) {
 	});
 	out.related_references = refs;
 	out.lines = Array.isArray(ai && ai.lines) ? ai.lines : [];
+	out.charges = Array.isArray(ai && ai.charges) ? ai.charges : [];
 	if (out.doc_type === "attachment") {
 		out.supplier_name = null; out.supplier_reg_number = null; out.supplier_tax_id = null;
 		out.customer_name = null; out.customer_reg_number = null; out.customer_tax_id = null;
@@ -630,8 +631,8 @@ function sendLive(t, sec, f) {
 	function fail(e) {
 		var msg = (e && e.errors && e.errors.length && e.errors.map(function (x) { return x.message; }).join(" ")) ||
 			(e && e.message) || String(e);
-		return { ok: false, lines: [errP(msg)] };
-	}
+		return { ok: false, lines: [errP(msg)], error: msg };
+		}
 	if (sec === "attachment") {
 		var parent0 = $("d-parent-manual").value.trim() || $("d-parent").value;
 		var kindLabel = { waybill: "Waybill / courier label", payment_order: "Payment order", other: "Supporting paper" }[state.attachmentKind] || "Supporting paper";
@@ -639,8 +640,10 @@ function sendLive(t, sec, f) {
 			var ok = res.file && res.file.state === "created";
 			return ok
 				? { ok: true, name: res.name, lines: ['<p class="hint" style="color:#1f8a4c">Saved as <b>' + esc(res.name) + "</b>, a child of <b>" + esc(res.parent || parent0) + ".</b></p>"] }
-				: { ok: false, lines: [errP("The file could not be attached: " +
-					((res.file && res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "unknown error"))] };
+				: (function () {
+					var why = "The file could not be attached: " + ((res.file && res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "unknown error");
+					return { ok: false, lines: [errP(why)], error: why, name: res.name };
+				})();
 		}).catch(fail);
 	}
 	var parentName = "";
@@ -658,7 +661,8 @@ function sendLive(t, sec, f) {
 				esc((res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "") + "</p>");
 		}
 		(res.notes || []).forEach(function (n) { lines.push('<p class="hint">' + esc(n.message) + "</p>"); });
-		return { ok: true, name: res.name, lines: lines };
+		var fileErr = res.file && res.file.state === "error" ? "The file could not be attached: " + ((res.file.errors && res.file.errors[0] && res.file.errors[0].message) || "") : "";
+		return { ok: true, name: res.name, lines: lines, notes: (res.notes || []).map(function (n) { return n.message; }), error: fileErr };
 	}).catch(fail);
 }
 
@@ -683,9 +687,17 @@ function approve() {
 	var both = tg.live && tg.test;
 	var out = [];
 	function head(label) { return both ? '<p class="hint"><b>' + label + "</b></p>" : ""; }
+	var rec = { type: DOC_TYPE_LABELS[t] || t, docNo: f.documentNo || "", supplier: f.supplierName || f.customerName || "", file: state.fileName || "", results: [] };
+	var stage = "Live";
+	function logResult(server, r) {
+		if (!r) return;
+		rec.results.push({ server: server, ok: !!r.ok && !r.error, name: r.name || "", message: r.error || "", notes: r.notes || [] });
+	}
+	function logged() { if (window.CS_HISTORY && rec.results.length) window.CS_HISTORY.record(rec); }
 	var step = live ? sendLive(t, sec, f) : Promise.resolve(null);
 	step.then(function (lr) {
-		if (lr) {
+	logResult("Live", lr);
+	if (lr) {
 			out.push(head("Live server"));
 			out = out.concat(lr.lines);
 			if (lr.ok) { state.liveDone = true; if (both) $("d-send-live").checked = false; }
@@ -695,20 +707,26 @@ function approve() {
 		if (!tg.test) return { ok: !lr || lr.ok };
 		if (lr && !lr.ok) {
 			out.push('<p class="hint warntext">Not sent to the test server because the live send failed.</p>');
+			rec.results.push({ server: "Test", skipped: true, message: "the live send failed" });
 			return { ok: false };
-		}
-		out.push(head("Test server"));
-		return NU.send(t, state.attachmentKind, f, { dataUrl: state.dataUrl, name: state.fileName }).then(function (r) {
+			}
+			out.push(head("Test server"));
+			stage = "Test";
+			return NU.send(t, state.attachmentKind, f, { dataUrl: state.dataUrl, name: state.fileName }).then(function (r) {
 			out = out.concat(r.lines);
+			logResult("Test", r);
 			return { ok: r.ok };
-		});
+			});
 	}).then(function (res) {
-		busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
-		stat(out.join(""));
-		if (res.ok) resetForm(true);
+	logged();
+	busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
+	stat(out.join(""));
+	if (res.ok) resetForm(true);
 	}).catch(function (e) {
-		busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
-		stat(out.join("") + errP((e && e.message) || String(e)));
+	rec.results.push({ server: stage, ok: false, message: (e && e.message) || String(e) });
+	logged();
+	busy($("btn-doc-approve"), false, "Approve & send to ERPNext");
+	stat(out.join("") + errP((e && e.message) || String(e)));
 	});
 }
 
@@ -817,6 +835,7 @@ function init() {
 	$("btn-doc-approve").onclick = approve;
 	$("btn-dupe-scan").onclick = scanDuplicateSuppliers;
 	if (window.CS_NEWUI) window.CS_NEWUI.init();
+	if (window.CS_HISTORY) window.CS_HISTORY.init();
 
 	updateTypeUi();
 }
