@@ -4,6 +4,7 @@
 var fs = require("fs"), path = require("path"), vm = require("vm");
 var file = path.join(__dirname, "../android/CardScanner/app/src/main/assets/accdoc.js");
 var created = [], updates = [], failUpdate = false, docs = { "ACC-1": { name: "ACC-1", naming_series: "PURCHASE-" }, "ACC-3": { name: "ACC-3", naming_series: "PROFORMA-", is_parent_document: 1 }, "ACC-C": { name: "ACC-C", naming_series: "PURCHASE-", parent_document: "ACC-1" } };
+var requireMain = false, attempts = 0;
 var calls = [], rows = [], purchaseOrders = ["PO-08258"];
 var sandbox = { window: {}, console: console };
 sandbox.window.CS_ERP = { shared: {
@@ -17,7 +18,14 @@ sandbox.window.CS_ERP = { shared: {
 	attachFile: function (dt, name, data, fn, field) { calls.push({ attach: [dt, name, fn, field] }); return Promise.resolve({ state: "created", name: "F-" + name, url: "/private/files/" + name + "-" + (field || "x") + ".pdf" }); },
 	fetchDoc: function (dt, name) { return Promise.resolve(docs[name] || null); },
 	clean: function (dt, doc, notes) { return Promise.resolve({ doc: doc, notes: notes }); },
-	createDoc: function (dt, doc) { created.push(doc); return Promise.resolve("ACC-NEW-" + created.length); },
+	createDoc: function (dt, doc) {
+		attempts++;
+		if (requireMain && (!doc.document_no || !doc.document_date)) {
+			var er = new Error("ERPNext rejected the Accounts Document");
+			er.errors = [{ field: "", message: "Value missing for Accounts Document: Document No" }, { field: "", message: "Value missing for Accounts Document: Document Date" }];
+			return Promise.reject(er);
+		}
+		created.push(doc); return Promise.resolve("ACC-NEW-" + created.length); },
 	updateDoc: function (dt, name, patch) { if (failUpdate) return Promise.reject(new Error("no")); updates.push([name, patch]); return Promise.resolve({}); }
 } };
 vm.createContext(sandbox); vm.runInContext(fs.readFileSync(file, "utf8"), sandbox);
@@ -63,9 +71,9 @@ rows = [
 
 	var cd = await ACC.createChild("cd", "ACC-1", { documentNo: "26LTVA100025C7F4R1", documentDate: "2026-08-25", supplierName: "Muitinės departamentas" }, "data:application/pdf;base64,QUJD", "cd.pdf");
 	var c1 = created[created.length - 1];
-	check("customs declaration: separate child record with its own section, linked to the parent, with the mandatory Document No and Date",
+	check("customs declaration: separate child record with its own section, linked to the parent, only its own CD fields (Document No / Date stay empty)",
 		c1.parent_document === "ACC-1" && c1.naming_series === "PURCHASE-" && c1.cd_document_no === "26LTVA100025C7F4R1" && c1.customs_declaration_cd_received === 1 &&
-		c1.document_no === "26LTVA100025C7F4R1" && c1.document_date === "2026-08-25" && !c1.purchase_invoice_received && calls[calls.length - 1].attach[3] === "cd_file" && cd.parent === "ACC-1", JSON.stringify(c1));
+		!("document_no" in c1) && !("document_date" in c1) && c1.cd_date === "2026-08-25" && !c1.purchase_invoice_received && calls[calls.length - 1].attach[3] === "cd_file" && cd.parent === "ACC-1", JSON.stringify(c1));
 	var pu = updates[updates.length - 1];
 	check("customs declaration: the PARENT's cd_file shows the child's file and its section is switched on",
 		pu[0] === "ACC-1" && pu[1].cd_file === "/private/files/ACC-NEW-3-cd_file.pdf" && pu[1].customs_declaration_cd_received === 1, JSON.stringify(updates));
@@ -87,7 +95,17 @@ rows = [
 	var self = await ACC.createChild("cd", "ACC-SELF", { documentNo: "26LTVA1", documentDate: "2026-10-05", supplierName: "Muitinės departamentas" }, "x", "cd.pdf");
 	check("a parent that names ITSELF in parent_document is still a parent (PURCHASE-07469 case)", !!self && !!self.name && self.state !== "error", JSON.stringify(self));
 	var cn = created[created.length - 1];
-	check("a child also carries the mandatory Document No and Document Date (ERPNext refuses it otherwise)", cn.document_no === "26LTVA1" && cn.document_date === "2026-10-05" && cn.cd_document_no === "26LTVA1", JSON.stringify(cn));
+	check("a child leaves Document No and Document Date empty (the CD number goes only to CD Document No)", !("document_no" in cn) && !("document_date" in cn) && cn.cd_document_no === "26LTVA1" && cn.cd_date === "2026-10-05", JSON.stringify(cn));
+	/* a server where both fields are mandatory: one retry with the PARENT's number and date, never the CD's own */
+	requireMain = true; attempts = 0; docs["ACC-M"] = { name: "ACC-M", naming_series: "PURCHASE-", is_parent_document: 1, document_no: "INV-77", document_date: "2026-10-01" };
+	var mand = await ACC.createChild("cd", "ACC-M", { documentNo: "26LTVA9", documentDate: "2026-10-05", supplierName: "Muitinės departamentas" }, "x", "cd.pdf");
+	var cm2 = created[created.length - 1];
+	check("mandatory Document No/Date: retried once with the parent's values, the CD number stays only in CD Document No",
+		attempts === 2 && cm2.document_no === "INV-77" && cm2.document_date === "2026-10-01" && cm2.cd_document_no === "26LTVA9" && mand.notes.some(function (n) { return /Mandatory/.test(n.message); }), JSON.stringify([cm2, mand.notes, attempts]));
+	docs["ACC-NP"] = { name: "ACC-NP", naming_series: "PURCHASE-", is_parent_document: 1 };
+	var e5 = null; try { await ACC.createChild("cd", "ACC-NP", { documentNo: "26LTVA9", documentDate: "2026-10-05" }, "x", "cd.pdf"); } catch (x) { e5 = x; }
+	check("mandatory and the parent has no number either: the server's error is shown", !!e5 && !!e5.errors, e5 && e5.message);
+	requireMain = false;
 	docs["ACC-P2"] = { name: "ACC-P2", naming_series: "PURCHASE-", is_parent_document: 1, document_no: "INV-9", document_date: "2026-09-30" };
 	await ACC.attachToParent("ACC-P2", "x", "label.pdf", "Waybill");
 	var ca = created[created.length - 1];

@@ -39,17 +39,31 @@ The AI (Anthropic key in Settings) reads every line: item code, description, qua
 
 **Quantity price breaks (quotations).** One line per quantity tier — the same item repeated, each with its quantity and price — becomes several rows of the Supplier Quotation.
 
+## VAT, shipping and other charges (Purchase Taxes and Charges)
+
+Besides the item lines the AI reads what the document adds or deducts: **VAT** (one row per rate), **shipping**, **handling**, **insurance**, **customs duty**, **discount** and **other** charges. They are shown under the lines (edit, add or remove rows) with a check line — *lines + charges = document total* — that turns orange and names the difference when they do not add up.
+
+Each row goes into the document's **Purchase Taxes and Charges** table (Purchase Invoice and Supplier Quotation) as charge type **Actual** with the printed amount, so ERPNext's total equals the document's. A discount is an **Deduct** row. VAT rows are category *Total*; the other rows use the category chosen in Settings (*Total* or *Valuation and Total* — the latter adds the charge to the item cost).
+
+The **Account Head** of a row is: the account set in Settings (VAT account; Shipping & handling account; Other charges account — used for insurance, duties, fees and discounts); otherwise the matching row of the *Purchase taxes template* (VAT: the row with a rate); otherwise an account of the company whose name says so (a *Tax* account called VAT/PVM; freight / shipping / transport / handling / insurance / duty accounts). A charge that has no account is **left out and named in the result** — set the account in Settings and the total check shows the difference meanwhile. When the document has charge rows the *Purchase taxes template* name is not set on the document (the template is only used to find accounts); without charge rows it is set as before.
+
+On shipping and customs-broker invoices the services billed (freight, clearance fee …) remain **lines**; only VAT and discounts become charge rows.
+
+## Upload history
+
+*Documents → Upload history* lists every send from this device: date and time, document type, number, supplier, file, and for each server **Sent / Partly sent / Failed** with the ERPNext name it was saved as or the error text and notes (for example fields ERPNext would not take). The latest 30 are in a scrollable field; **Show older records** opens the whole stored list (up to 500). The list is stored on the device (`upload-history.json`) and nothing in it is sent anywhere.
+
 ## Waybills
 
 The AWB number is read from the waybill and searched in the *Tracking AWB* field of the Purchase Orders on the test server. Tick the order(s) to receive (one Purchase Receipt per order); you can also type a Purchase Order. The receipt is created with ERPNext's own *Create → Purchase Receipt* (all open quantities of the order), the AWB is written into it, and the waybill is attached. If a Purchase Receipt with that AWB already exists, the waybill is attached to it and no new receipt is made.
 
 ## Settings (Test server — new document flow)
 
-Test server address · Item group for new items · Stock UOM for new items (default Nos) · Item for lines without a code (optional) · Company (optional, only if the server has several) · Purchase taxes template (optional) · **Test the test server** button.
+Test server address · Item group for new items · Stock UOM for new items (default Nos) · Item for lines without a code (optional) · Company (optional, only if the server has several) · Purchase taxes template (optional) · VAT account · Shipping & handling account · Other charges account · charges count as *Total* / *Valuation and Total* · Cost center for the charge rows (all optional) · **Test the test server** button.
 
 ## Notes and assumptions
 
 * Posting date = the document date. The document number becomes *Supplier Invoice No* (`bill_no`), so ERPNext refuses a number already used by that supplier.
 * The supplier must already exist on the test server (matched by name, registration / VAT code, or the same name apart from spelling and legal form). Suppliers are not created.
 * The names of the *Scanned Invoice* and *Tracking AWB* fields are looked up on the server (the customize form only shows them cut off).
-* Without a taxes template ERPNext computes the invoice net of VAT; the app compares the ERPNext total with the document's and says if they differ.
+* The app compares ERPNext's grand total with the document's total after saving and says if they differ.

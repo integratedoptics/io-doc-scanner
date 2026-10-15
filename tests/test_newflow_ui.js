@@ -9,7 +9,7 @@ catch (e) { console.log("skipped: jsdom is not installed (set JSDOM_PATH)"); pro
 var A = path.join(__dirname, "../android/CardScanner/app/src/main/assets/");
 var html = fs.readFileSync(A + "index.html", "utf8").replace(/<script[\s\S]*?<\/script>/g, "");
 var src = {};
-["docrules", "accdoc", "newdocs", "newui", "docscan"].forEach(function (n) { src[n] = fs.readFileSync(A + n + ".js", "utf8"); });
+["docrules", "accdoc", "newdocs", "newui", "history", "docscan"].forEach(function (n) { src[n] = fs.readFileSync(A + n + ".js", "utf8"); });
 var fails = 0;
 function check(l, c, x) { if (!c) fails++; console.log((c ? "ok   " : "FAIL ") + l + (c ? "" : "   " + (x || ""))); }
 function tick() { return new Promise(function (r) { setTimeout(r, 15); }); }
@@ -26,6 +26,7 @@ function page(opts) {
 	var fake = {
 		getList: function (dt) {
 			if (dt === "Item") return Promise.resolve(st.items.slice());
+			if (dt === "Account") return Promise.resolve([{ name: "2441 - PVM - IO", account_type: "Tax", root_type: "Asset" }, { name: "4430 - Transport - IO", account_type: "", root_type: "Expense" }]);
 			if (dt === "Supplier") return Promise.resolve(suppliers);
 			if (dt === "Company") return Promise.resolve([{ name: "IO", default_currency: "EUR" }]);
 			if (dt === "Purchase Order") return Promise.resolve([{ name: "PO-08353", supplier: "S", transaction_date: "2026-09-01", status: "To Receive", per_received: 40, docstatus: 1, tracking_awb_no: "5554865912" }]);
@@ -46,8 +47,9 @@ function page(opts) {
 	w.CS_ERP = { ready: function () { return ""; }, shared: { getList: function () { return Promise.resolve([]); } } };
 	w.CS_ERP_TEST = { ready: function () { return ""; }, shared: fake };
 	w.CS_ERP_TEST_ENABLED = function (s) { return !!(s && s.erp_test_url); };
-	w.Android = {};
-	w.eval(src.docrules); w.eval(src.accdoc); w.eval(src.newdocs); w.eval(src.newui); w.eval(src.docscan);
+	st.store = {};
+	w.Android = { readData: function (n) { return st.store[n] || ""; }, writeData: function (n, c) { st.store[n] = c; return true; } };
+	w.eval(src.docrules); w.eval(src.accdoc); w.eval(src.newdocs); w.eval(src.newui); w.eval(src.history); w.eval(src.docscan);
 	w.CS_ACC.findExactSupplier = function () { return Promise.resolve(null); };
 	w.CS_ACC.findSupplierMatches = function () { return Promise.resolve([]); };
 	w.CS_ACC.suggestParents = function () { return Promise.resolve([]); };
@@ -132,6 +134,50 @@ var INV = { doc_type: "purchase_invoice", document_no: "MTPA1", document_date: "
 	await settle();
 	var pr = p.st.created.filter(function (c) { return c.dt === "Purchase Receipt"; })[0];
 	check("waybill: a Purchase Receipt is made from the order and the waybill attached to it", !!pr && p.st.attached.some(function (a) { return a[0] === "Purchase Receipt"; }) && /Purchase Receipt/.test(p.el("d-stat").textContent), p.el("d-stat").textContent);
+
+
+	/* charges: VAT, shipping and a discount on the review screen, in the Purchase Taxes and Charges table */
+	var INV2 = JSON.parse(JSON.stringify(INV));
+	INV2.total_amount = 24.57;
+	INV2.charges = [{ kind: "vat", description: "PVM 21%", rate: 21, amount: 3.57 }, { kind: "shipping", description: "Shipping & handling", amount: 4 }, { kind: "vat", description: "PVM 0%", rate: 0, amount: 0 }];
+	p = page({ ai: INV2 });
+	p.w.onDocPicked({ ok: true, name: "inv.pdf", dataUrl: PDF });
+	await settle();
+	check("charges: two rows shown (the zero VAT row is dropped) in the charges box", p.el("d-box-charges").style.display !== "none" && p.el("d-charges").querySelectorAll(".ch").length === 2, p.el("d-charges").innerHTML.slice(0, 200));
+	check("charges: lines 17 + charges 7.57 = 24.57 matches the document total", /Lines 17\.00 \+ charges 7\.57 = 24\.57/.test(p.el("d-charge-sum").textContent) && /matches/.test(p.el("d-charge-sum").textContent), p.el("d-charge-sum").textContent);
+	var amt = p.el("d-charges").querySelectorAll('input[data-f="amount"]')[1];
+	amt.value = "9"; amt.dispatchEvent(new p.w.Event("change", { bubbles: true }));
+	check("charges: editing an amount updates the check and flags the difference", /difference \+5\.00/.test(p.el("d-charge-sum").textContent), p.el("d-charge-sum").textContent);
+	amt = p.el("d-charges").querySelectorAll('input[data-f="amount"]')[1];
+	amt.value = "4"; amt.dispatchEvent(new p.w.Event("change", { bubbles: true }));
+	p.el("btn-charge-add").click();
+	check("charges: 'Add a charge' adds an empty row", p.el("d-charges").querySelectorAll(".ch").length === 3);
+	p.el("d-charges").querySelectorAll('[data-del]')[2].click();
+	p.el("d-send-live").checked = false;
+	p.el("btn-doc-approve").click();
+	await settle();
+	var pi2 = p.st.created.filter(function (c) { return c.dt === "Purchase Invoice"; })[0];
+	check("charges: the Purchase Invoice has the VAT row and the shipping row", !!pi2 && pi2.doc.taxes && pi2.doc.taxes.length === 2 && pi2.doc.taxes[0].tax_amount === 3.57 && pi2.doc.taxes[0].account_head === "2441 - PVM - IO" &&
+		pi2.doc.taxes[1].account_head === "4430 - Transport - IO" && pi2.doc.taxes[1].tax_amount === 4, JSON.stringify(pi2 && pi2.doc.taxes));
+
+	/* upload history */
+	var hist = p.w.document.getElementById("d-hist");
+	check("history: the test-server upload is listed as Sent with the document number and the ERPNext name", /Sent/.test(hist.textContent) && /MTPA1/.test(hist.textContent) && /Test/.test(hist.textContent) && /Purchase Invoice/.test(hist.textContent), hist.textContent);
+	check("history: it is stored on the device", p.st.store["upload-history.json"] && JSON.parse(p.st.store["upload-history.json"]).length === 1);
+	p = page({ ai: INV });
+	p.w.onDocPicked({ ok: true, name: "inv.pdf", dataUrl: PDF });
+	await settle();
+	p.w.CS_ACC.createMain = function () { return Promise.reject(Object.assign(new Error("x"), { errors: [{ message: "ERPNext rejected the Accounts Document: Value missing for Accounts Document: Document No" }] })); };
+	p.el("btn-doc-approve").click();
+	await settle();
+	var ht = p.w.document.getElementById("d-hist").textContent;
+	check("history: a failed live send is listed as Failed with ERPNext's own error, the test send as not sent", /Failed/.test(ht) && /Value missing for Accounts Document: Document No/.test(ht) && /not sent/.test(ht), ht);
+	for (var hi = 0; hi < 34; hi++) p.w.CS_HISTORY.record({ type: "Purchase Invoice", docNo: "N" + hi, supplier: "S", results: [{ server: "Test", ok: hi % 5 !== 0, name: "PINV-" + hi, message: "boom" }] });
+	check("history: 30 records are shown, the rest behind 'Show older records'", p.w.document.querySelectorAll("#d-hist .uhrow").length === 30 && /Show older records \(5 more\)/.test(p.el("btn-hist-more").textContent) && p.el("btn-hist-more").style.display !== "none", p.el("btn-hist-more").textContent);
+	p.el("btn-hist-more").click();
+	check("history: expanded it lists all 35 and can be folded again", p.w.document.querySelectorAll("#d-hist .uhrow").length === 35 && /latest 30/.test(p.el("btn-hist-more").textContent) && p.el("d-hist").className.indexOf("open") >= 0);
+	p.el("btn-hist-more").click();
+	check("history: folded again to 30", p.w.document.querySelectorAll("#d-hist .uhrow").length === 30);
 
 	/* test server off */
 	p = page({ ai: INV, noTest: true });

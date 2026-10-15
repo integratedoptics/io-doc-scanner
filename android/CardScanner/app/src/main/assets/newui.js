@@ -19,7 +19,7 @@ function settings() { return (window.CS && window.CS.settings && window.CS.setti
 function enabled() { return window.CS_ERP_TEST_ENABLED(settings()); }
 
 var INVOICE_TYPES = { purchase_invoice: 1, shipping_invoice: 1, cd_invoice: 1 };
-var state = { lines: [], pos: { docs: {}, missing: [] }, token: 0, orders: [], picked: {}, receipts: [], awbFor: "", itemsFor: "" };
+var state = { lines: [], charges: [], pos: { docs: {}, missing: [] }, token: 0, orders: [], picked: {}, receipts: [], awbFor: "", itemsFor: "" };
 
 /* which new-flow kind a document goes to: "invoice" | "quotation" | "waybill" | "" (live flow only) */
 function kind(type, attachmentKind) {
@@ -50,19 +50,20 @@ function update(type, attachmentKind, quiet) {
 			quotation: "The quotation is filed as a draft Supplier Quotation; several lines of one item mean quantity price breaks.",
 			waybill: "A draft Purchase Receipt is made from the Purchase Order that carries this AWB number, and the waybill is attached to it." }[k] || "");
 	$("d-box-lines").style.display = (k === "invoice" || k === "quotation") && on ? "" : "none";
+	$("d-box-charges").style.display = (k === "invoice" || k === "quotation") && on ? "" : "none";
 	$("d-box-track").style.display = (k === "invoice" || k === "waybill") && on ? "" : "none";
 	$("d-box-valid").style.display = k === "quotation" && on ? "" : "none";
 	$("d-box-awb").style.display = k === "waybill" && on ? "" : "none";
 	if (quiet) return;
-	if ((k === "invoice" || k === "quotation") && on) refreshLines(false);
+	if ((k === "invoice" || k === "quotation") && on) { refreshLines(false); renderCharges(); }
 	if (k === "waybill" && on) findOrders();
 }
 
 function reset() {
 	state.token++;
-	state.lines = []; state.pos = { docs: {}, missing: [] }; state.orders = []; state.picked = {}; state.receipts = []; state.awbFor = "";
+	state.lines = []; state.charges = []; state.pos = { docs: {}, missing: [] }; state.orders = []; state.picked = {}; state.receipts = []; state.awbFor = "";
 	["d-tracking_number", "d-valid_until", "d-awb-po"].forEach(function (id) { if ($(id)) $(id).value = ""; });
-	$("d-lines").innerHTML = ""; $("d-po-sum").innerHTML = ""; $("d-awb-list").innerHTML = ""; $("d-lines-hint").textContent = "";
+	$("d-lines").innerHTML = ""; $("d-charges").innerHTML = ""; $("d-charge-sum").innerHTML = ""; $("d-po-sum").innerHTML = ""; $("d-awb-list").innerHTML = ""; $("d-lines-hint").textContent = "";
 	$("d-send-live").checked = true; $("d-send-test").checked = true;
 	$("d-new").style.display = "none";
 }
@@ -73,7 +74,9 @@ function setExtraction(x) {
 	if ($("d-tracking_number")) $("d-tracking_number").value = x.tracking_number ? String(x.tracking_number).replace(/\s+/g, "") : "";
 	if ($("d-valid_until")) $("d-valid_until").value = x.valid_until || "";
 	state.lines = (Array.isArray(x.lines) ? x.lines : []).map(N().normalizeLine);
+	state.charges = (Array.isArray(x.charges) ? x.charges : []).map(N().normalizeCharge).filter(function (c) { return c.amount !== null && c.amount !== 0; });
 	state.itemsFor = "";
+	renderCharges();
 }
 
 /* ----------------------------------------------------------- lines */
@@ -135,6 +138,7 @@ function renderLines() {
 	if (open) sum += " " + open + " line" + (open > 1 ? "s" : "") + " differ from the order.";
 	$("d-po-sum").innerHTML = sum ? '<p class="hint' + (open || state.pos.missing.length ? " warntext" : "") + '">' + esc(sum) + "</p>" : "";
 	var nocode = state.lines.some(function (l) { return l.match && l.match.kind === "nocode"; });
+	renderTotals();
 	$("d-lines-hint").textContent = !state.lines.length
 		? "No item lines were read from this document. Add them with “Add a line” (the Anthropic key in Settings reads them automatically)."
 		: (nocode ? "Lines without an item code would become new items. To book such lines (courier charges, freight) on one service item instead, set “Item for lines without a code” in Settings." : "");
@@ -209,9 +213,71 @@ function wire() {
 		state.itemsFor = "";
 		refreshLines(true);
 	};
+	var cb = $("d-charges");
+	cb.addEventListener("change", function (ev) {
+		var el = ev.target, row = el.closest ? el.closest(".ch") : null;
+		if (!row || !el.dataset || !el.dataset.f) return;
+		chargeEdit(Number(row.dataset.i), el.dataset.f, el.value);
+	});
+	cb.addEventListener("click", function (ev) {
+		var el = ev.target, row = el.closest ? el.closest(".ch") : null;
+		if (row && el.dataset && el.dataset.del) { state.charges.splice(Number(row.dataset.i), 1); renderCharges(); }
+	});
+	$("btn-charge-add").onclick = function () { state.charges.push(N().normalizeCharge({ kind: "shipping" })); renderCharges(); };
+	$("d-total_amount").addEventListener("change", renderTotals);
+	$("d-currency").addEventListener("change", renderTotals);
 	$("btn-awb-find").onclick = function () { findOrders(true); };
 	$("d-tracking_number").addEventListener("change", function () { findOrders(true); });
 	$("d-purchase_order_reference").addEventListener("change", function () { if (state.lines.length) refreshLines(false); });
+}
+
+/* ----------------------------------------------------------- charges */
+
+function kindOptions(sel) {
+	return N().CHARGE_KINDS.map(function (k) {
+		return '<option value="' + k + '"' + (k === sel ? " selected" : "") + ">" + esc(N().CHARGE_LABELS[k]) + "</option>";
+	}).join("");
+}
+
+function chargeHtml(c, i) {
+	return '<div class="li ch" data-i="' + i + '">' +
+		'<div class="row3"><div><label>Kind</label><select data-f="kind">' + kindOptions(c.kind) + "</select></div>" +
+		"<div><label>" + (c.kind === "vat" ? "Rate %" : "&nbsp;") + "</label>" + (c.kind === "vat"
+			? '<input data-f="rate" inputmode="decimal" value="' + esc(fmt(c.rate)) + '">' : "") + "</div>" +
+		'<div><label>Amount</label><input data-f="amount" inputmode="decimal" value="' + esc(fmt(c.amount)) + '"></div></div>' +
+		'<input data-f="description" class="desc" placeholder="Description as printed" value="' + esc(c.description) + '">' +
+		'<button type="button" class="lnk" data-del="1">Remove this row</button></div>';
+}
+
+/* lines + charges against the document's total */
+function renderTotals() {
+	var box = $("d-charge-sum");
+	if (!box) return;
+	if (!state.lines.length && !state.charges.length) { box.innerHTML = ""; return; }
+	var t = N().totalCheck(state.lines, state.charges.map(N().normalizeCharge), $("d-total_amount").value.trim());
+	var cur = $("d-currency").value.trim().toUpperCase();
+	var txt = "Lines " + t.lines.toFixed(2) + (t.charges ? " + charges " + t.charges.toFixed(2) : "") + " = " + t.sum.toFixed(2) + (cur ? " " + cur : "");
+	if (t.ok === null) box.innerHTML = '<p class="hint">' + esc(txt) + ".</p>";
+	else if (t.ok) box.innerHTML = '<p class="hint" style="color:#1f8a4c">' + esc(txt) + " — matches the document total.</p>";
+	else box.innerHTML = '<p class="hint warntext">' + esc(txt) + " — the document total is " + t.total.toFixed(2) + " (difference " +
+		(t.diff > 0 ? "+" : "") + t.diff.toFixed(2) + "). Check the lines and the charges.</p>";
+}
+
+function renderCharges() {
+	var box = $("d-charges");
+	if (!box) return;
+	box.innerHTML = state.charges.map(chargeHtml).join("");
+	renderTotals();
+}
+
+function chargeEdit(i, f, v) {
+	var c = state.charges[i];
+	if (!c) return;
+	if (f === "kind") { c.kind = v; if (v === "discount" && c.amount > 0) c.amount = -c.amount; renderCharges(); return; }
+	if (f === "amount") { c.amount = N()._internals.num(v); if (c.kind === "discount" && c.amount > 0) c.amount = -c.amount; renderCharges(); return; }
+	if (f === "rate") c.rate = N()._internals.num(v);
+	else if (f === "description") c.description = v.trim();
+	renderTotals();
 }
 
 /* ----------------------------------------------------------- waybill */
@@ -330,19 +396,22 @@ function send(type, attachmentKind, f, file) {
 	var lines = [];
 	if (k === "invoice" || k === "quotation") {
 		var make = k === "invoice" ? N().createPurchaseInvoice : N().createSupplierQuotation;
+		var charges = state.charges.map(N().normalizeCharge);
 		var what = k === "invoice" ? "Purchase Invoice" : "Supplier Quotation";
-		return make(fields, state.lines, file).then(function (r) {
+		return make(fields, state.lines, file, charges).then(function (r) {
 			lines.push(ok("Test server: saved as <b>" + esc(r.name) + "</b> (" + what + ", draft)."));
+			var summary = { name: r.name, notes: (r.notes || []).map(function (n) { return n.message; }).concat(r.note ? [r.note] : []), error: "" };
+			if (r.file && r.file.state === "error") summary.error = "The file could not be attached: " + ((r.file.errors && r.file.errors[0] && r.file.errors[0].message) || "");
 			if (r.created && r.created.length) lines.push(ok("New items created first: " + esc(r.created.join(", ")) + "."));
 			fileLines(r.file).forEach(function (h) { lines.push(h); });
 			if (r.note) lines.push(plain(esc(r.note), true));
 			noteLines(r.notes).forEach(function (h) { lines.push(h); });
 			N().forgetItems();
-			return { ok: true, lines: lines };
-		}, function (e) {
+			return { ok: true, lines: lines, name: summary.name, notes: summary.notes, error: summary.error };
+			}, function (e) {
 			lines.push(bad("Test server: " + esc(N().errText(e))));
-			return { ok: false, lines: lines };
-		});
+			return { ok: false, lines: lines, error: N().errText(e) };
+			});
 	}
 	if (k === "waybill") {
 		var picked = Object.keys(state.picked).filter(function (n) { return state.picked[n]; });
@@ -352,17 +421,20 @@ function send(type, attachmentKind, f, file) {
 			})
 			: N().createReceipts(picked, fields.trackingNumber, file);
 		return job.then(function (rs) {
-			var all = true;
+			var all = true, names = [], errs = [], notesAll = [];
 			rs.forEach(function (r) {
-				if (r.error) { all = false; lines.push(bad("Test server: " + esc(r.order || "") + " — " + esc(r.error))); return; }
+			if (r.error) { all = false; errs.push((r.order ? r.order + ": " : "") + r.error); lines.push(bad("Test server: " + esc(r.order || "") + " — " + esc(r.error))); return; }
 				lines.push(ok("Test server: " + (r.existing ? "waybill attached to the existing receipt <b>" : "Purchase Receipt <b>") + esc(r.name) +
 					"</b>" + (r.existing ? "." : " saved as a draft" + (r.order ? " from " + esc(r.order) : "") + ".")));
+				names.push(r.name);
+				if (r.file && r.file.state === "error") { all = false; errs.push(r.name + ": the file could not be attached \u2014 " + ((r.file.errors && r.file.errors[0] && r.file.errors[0].message) || "")); }
+				(r.notes || []).forEach(function (n) { notesAll.push(n.message); });
 				fileLines(r.file).forEach(function (h) { lines.push(h); });
 				noteLines(r.notes).forEach(function (h) { lines.push(h); });
-			});
-			return { ok: all, lines: lines };
-		}, function (e) {
-			return { ok: false, lines: [bad("Test server: " + esc(N().errText(e)))] };
+				});
+				return { ok: all, lines: lines, name: names.join(", "), error: errs.join(" "), notes: notesAll };
+				}, function (e) {
+				return { ok: false, lines: [bad("Test server: " + esc(N().errText(e)))], error: N().errText(e) };
 		});
 	}
 	return Promise.resolve({ ok: true, lines: [] });
