@@ -174,3 +174,7 @@ still `https`-only.
   again* path; the card list itself shows the saved thumbnail rather than
   re-reading the original file.
 - **No automatic folder sync** to Synology, as explained above.
+
+## Update notice (1.4 and later)
+
+An iPhone app can only be replaced by installing a new build (Xcode, TestFlight or the App Store), so the app only **tells** you that a newer version exists: it reads `mobile.json` from the internal update server (`http://192.168.1.79:3005/updates/io-doc-scanner/`) and, when the `ios` entry is newer than the installed version, shows a bar with your message. The installed version is `MARKETING_VERSION` (now the Info.plist follows it; before it was fixed at 1.2). Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` for every build you hand out, then publish the notice with `node tools/make-mobile-manifest.js --out mobile.json --ios-version <version> --ios-message "…"` and copy `mobile.json` to the server. Settings → *App updates* has the server address and a *Check for updates* button. Full description: `docs/MOBILE-UPDATES.md`.

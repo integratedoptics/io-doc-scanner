@@ -13,13 +13,13 @@ time — that is expected (see step 3).
 
    ```
    npm install
-   npm run dist:win
+   npm run dist
    ```
 
-4. In `electron\dist` you now have two files:
-   - `IO Doc Scanner Setup 1.4.0.exe` — the installer (Start-menu entry, uninstaller, can be updated by installing over it)
-   - `IO Doc Scanner 1.4.0.exe` — the portable version (no installation, runs from wherever you put it, e.g. a USB stick or a network share)
-   - the `.zip` file (named after the app and version, e.g. `…-1.4.0-win.zip`) — a ZIP of the unpacked app: unzip it anywhere, open the folder and double-click `IO Doc Scanner.exe`. No installation, no admin rights, and it starts faster than the single-file portable version, which unpacks itself on every launch.
+4. In `electron\dist` you now have:
+   - `IO Doc Scanner Setup 1.4.0.exe` — the installer (Start-menu entry, uninstaller). Only the **installed** app updates itself (see "Automatic updates" below).
+   - `IO Doc Scanner Setup 1.4.0.exe.blockmap` and `latest.yml` — what the update server needs (see "Automatic updates").
+   - For a portable copy without installing, build the ZIP instead: `npm run dist:win:zip` gives a `…-1.4.0-win.zip` — unzip it anywhere, open the folder and double-click `IO Doc Scanner.exe`. No installation, no admin rights. (The ZIP does not update itself.)
 
    Copy whichever you prefer to the other PCs (shared drive, USB stick, e-mail to yourself …).
    Building takes a few minutes the first time because it downloads Electron.
@@ -48,11 +48,17 @@ To update, delete the old folder and unzip the new one; settings stay in `%APPDA
 
 ## Updating, removing, silent install
 
-- **Update:** run the newer installer; it replaces the old version and keeps the settings.
+- **Update:** the installed app updates itself (next section). To update by hand, run the newer installer; it replaces the old version and keeps the settings.
 - **Remove:** *Settings → Apps → IO Doc Scanner → Uninstall.*
 - **Where data lives:** `%APPDATA%\IO Doc Scanner\` (settings and the local card queue).
 - **Install on many PCs without clicking:** `"IO Doc Scanner Setup 1.4.0.exe" /S` (add `/allusers` or `/currentuser`
   to choose the scope).
+
+## Automatic updates (installed app)
+
+The installed app asks the internal update server (`http://192.168.1.79:3005/updates/io-doc-scanner/`) for a newer version when it starts and then every 30 minutes, and downloads it in the background. When it is ready, a window says **"Update <version> has been downloaded"**: **Restart now** installs it and restarts the app; **Later** installs it the next time the app is closed. If the server cannot be reached nothing is shown (the app only writes a line to `%APPDATA%\IO Doc Scanner\logs\main.log`).
+
+To publish a new version: raise `version` in `electron\package.json`, run `npm run dist` on a Windows PC, copy `IO Doc Scanner Setup <version>.exe` and its `.blockmap` to `\\192.168.1.79\docker\electron-update-server\updates\io-doc-scanner\`, and copy `latest.yml` there **last**. Details in `README.md`.
 
 ## Building without a Windows PC
 

@@ -210,3 +210,9 @@ You do not need to uninstall anything. If Android refuses with *App not
 installed*, it means the old copy came from a different signing key; uninstall
 the old app first, and note that this clears the card list, so export anything
 you still need beforehand.
+
+## Updates from inside the app (1.4 and later)
+
+Version 1.4 is the first that can look for updates itself. On the internal update server (`http://192.168.1.79:3005/updates/io-doc-scanner/`) the app reads `mobile.json`; when it lists a newer version, an orange bar appears — **Install** downloads the new apk, checks it and opens Android's installer (you confirm once). The first time Android asks you to allow Card Scanner to install apps; switch it on, go back and tap Install again. Settings → *App updates* has the server address and a *Check for updates* button.
+
+**The new apk must be signed with the same key as the installed one** (otherwise Android says *App not installed*) — keep the 1.4 keystore and its passwords safe. To publish a version: raise `versionCode`/`versionName` in `app/build.gradle`, build the signed release apk, run `node tools/make-mobile-manifest.js --out mobile.json --android <apk> --android-version <versionName>`, copy the apk to the server folder and `mobile.json` last. Full description: `docs/MOBILE-UPDATES.md` (included in the project's documentation folder).
