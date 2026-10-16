@@ -72,6 +72,8 @@ app.whenReady().then(() => {
 		try { app.dock.setIcon(nativeImage.createFromPath(path.join(__dirname, "icon-mac.png"))); } catch (e) { /* cosmetic */ }
 	}
 	createWindow();
+	// automatic updates from the internal update server (packaged Windows installer only; see updater.js)
+	require("./updater").start();
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
 	});

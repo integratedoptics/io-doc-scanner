@@ -11,7 +11,8 @@
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "dist:win:zip": "electron-builder --win zip"
+    "dist:win:zip": "electron-builder --win zip",
+    "test": "node --test"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -56,18 +57,6 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "icon": "build/icon.png"
@@ -75,6 +64,13 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "http://192.168.1.79:3005/updates/io-doc-scanner/"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }
