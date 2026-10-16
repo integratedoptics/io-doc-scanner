@@ -89,7 +89,9 @@ var DEFAULTS = {
 	/* attach the photo of the card, and let the app fill small ERPNext lists */
 	erp_attach: true, erp_masters: true,
 	/* which of the three switches a new card starts with */
-	sync_org: false, sync_contact: true, sync_address: true
+	sync_org: false, sync_contact: true, sync_address: true,
+	/* phone apps: where to look for a newer version (empty = the built-in address), and the version the user dismissed */
+	update_url: "", update_dismissed: ""
 };
 
 var EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]{2,}/g;
@@ -746,6 +748,7 @@ function paintSettings() {
 	$("s-new-other").value = S.new_other_account || "";
 	$("s-new-chcat").value = S.new_charge_category || "Total";
 	$("s-new-cc").value = S.new_cost_center || "";
+	$("s-upd-url").value = S.update_url || "";
 	$("s-extract-key").value = S.extract_key || "";
 	$("s-extract-workspace").value = S.extract_workspace || "";
 	$("s-erp-attach").checked = S.erp_attach !== false;
@@ -797,6 +800,7 @@ function grabSettings(silent) {
 	S.new_other_account = $("s-new-other").value.trim();
 	S.new_charge_category = $("s-new-chcat").value || "Total";
 	S.new_cost_center = $("s-new-cc").value.trim();
+	S.update_url = $("s-upd-url").value.trim();
 	S.extract_key = $("s-extract-key").value.trim();
 	S.extract_workspace = $("s-extract-workspace").value.trim();
 	S.erp_attach = $("s-erp-attach").checked;
@@ -1445,6 +1449,8 @@ loadState();
 window.CS_ERP_CONFIGURE_ALL(S);
 wire();
 if (window.CS_DOCSCAN) window.CS_DOCSCAN.init();
+if (window.CS_UPDATES) window.CS_UPDATES.init({ settings: function () { return S; }, save: saveSettings, toast: toast,
+	grab: function () { S.update_url = $("s-upd-url").value.trim(); saveSettings(); } });
 paintCountryList();
 paintSettings();
 paintCount();

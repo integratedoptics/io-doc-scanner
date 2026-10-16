@@ -35,18 +35,21 @@ Step-by-step instructions for installing on Windows PCs: [INSTALL-WINDOWS.md](IN
 
 **Builds are unsigned.** macOS Gatekeeper will show an "unidentified developer" warning, and Windows SmartScreen will warn on first run — expected for now. Distributing this more broadly will need an Apple Developer ID (for `notarize`/code signing) and a Windows code-signing certificate; neither is set up yet.
 
-## Automatic updates (Windows installer)
+## Automatic updates (Windows installer and macOS)
 
-The installed Windows app checks the internal update server (`build.publish` in `package.json`: `http://192.168.1.79:3005/updates/io-doc-scanner/`) once after it starts and then every 30 minutes, and downloads a newer version in the background. When it is ready a dialog says **"Update <version> has been downloaded"** with **Restart now** (installs and restarts) and **Later** (the update is installed when the app is closed; the dialog is not shown again for the same version). An unreachable server is only written to the log (`%APPDATA%\IO Doc Scanner\logs\main.log`); the user sees no error. Nothing is checked in `npm start`, the portable build / zip, or on macOS (the Mac builds are unsigned, which macOS will not auto-update). Code: `app/updater.js`, test: `test/updater.test.js`.
+The installed app checks the internal update server (`build.publish` in `package.json`: `http://192.168.1.79:3005/updates/io-doc-scanner/`) once after it starts and then every 30 minutes, and downloads a newer version in the background. When it is ready a dialog says **"Update <version> has been downloaded"** with **Restart now** (installs and restarts) and **Later** (the update is installed when the app is closed; the dialog is not shown again for the same version). An unreachable server is only written to the log (Windows `%APPDATA%\IO Doc Scanner\logs\main.log`, macOS `~/Library/Application Support/IO Doc Scanner/logs/main.log`); the user sees no error. Nothing is checked in `npm start`, the Windows portable build / zip, or on Linux. Code: `app/updater.js`, test: `test/updater.test.js`.
+
+**Windows** updates only the *installed* (NSIS) build. **macOS** updates the app from the `.zip` build. macOS installs an update by itself only into a *signed* app; the Mac builds are unsigned, so when the download/install fails the app shows **"Update <version> is available"** with **Download** (opens the right zip for that Mac — Apple silicon or Intel — in the browser; unzip it and replace the app in Applications) and **Later**, once per version.
 
 **Releasing a new version**
 
-1. Raise `version` in `package.json` (the app only updates to a higher number).
-2. `npm run dist` on a Windows PC. It makes `dist\IO Doc Scanner Setup <version>.exe`, the `.blockmap` next to it and `dist\latest.yml` (generated — never write it by hand).
-3. Copy the `.exe` and the `.blockmap` to `\\192.168.1.79\docker\electron-update-server\updates\io-doc-scanner\`.
-4. Copy `latest.yml` **last**, so no client sees a version whose `.exe` is not there yet.
+1. Raise `version` in `package.json` (the app only updates to a higher number; the phone apps have their own version, see `docs/MOBILE-UPDATES.md`).
+2. Windows: `npm run dist` on a Windows PC. It makes `dist\IO Doc Scanner Setup <version>.exe`, the `.blockmap` next to it and `dist\latest.yml` (generated — never write it by hand).
+   macOS: `npm run dist:mac` (on a Mac, or anywhere electron-builder can build the zips). It makes `IO Doc Scanner-<version>-mac.zip`, `IO Doc Scanner-<version>-arm64-mac.zip`, their `.blockmap` files and `latest-mac.yml`.
+3. Copy the `.exe` / `.zip` files and their `.blockmap` files to `\\192.168.1.79\docker\electron-update-server\updates\io-doc-scanner\`.
+4. Copy `latest.yml` and `latest-mac.yml` **last**, so no client sees a version whose files are not there yet.
 
-Check: `http://192.168.1.79:3005/updates/io-doc-scanner/latest.yml` opens in a browser and its `url:` file name is the `.exe` you copied. To try it end to end, install an older version, upload a newer one as above, start the old app and wait for the dialog (first check right after start-up).
+Check: `http://192.168.1.79:3005/updates/io-doc-scanner/latest.yml` (and `latest-mac.yml`) opens in a browser and its `url:` file names are the files you copied. To try it end to end, install an older version, upload a newer one as above, start the old app and wait for the dialog (first check right after start-up).
 
 ## Where things are stored
 

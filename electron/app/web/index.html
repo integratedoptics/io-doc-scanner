@@ -225,6 +225,10 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
   position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:70;display:none;
   background:var(--violet);color:#fff;font-size:12px;padding:7px 13px;border-radius:20px
 }
+.updbar{background:#fff1e5;border:1px solid var(--orange);border-radius:12px;padding:10px 12px;margin:0 0 12px;font-size:13px;color:var(--black)}
+.updbar .ue{color:#b02a2a;font-weight:700}
+.updbar .ub{margin:4px 6px 0 0;border:0;border-radius:99px;padding:6px 14px;font-weight:700;background:var(--orange);color:var(--black);font-size:13px}
+.updbar .ub.sec{background:transparent;border:1px solid var(--orange)}
 </style>
 </head>
 <body>
@@ -242,6 +246,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 </header>
 
 <main>
+  <div id="upd-banner" class="updbar" style="display:none"></div>
 
   <!-- ============================================================ SCAN -->
   <section class="view on" id="v-scan">
@@ -552,6 +557,16 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <button class="b sec" id="btn-save-set" style="margin-top:10px">Save settings</button>
     </div>
 
+    <div class="card" id="upd-card" style="display:none">
+      <h2 class="v">App updates</h2>
+      <div class="f"><label>Update server address</label>
+        <input id="s-upd-url" type="text" autocapitalize="off" spellcheck="false" placeholder="http://192.168.1.79:3005/updates/io-doc-scanner/">
+      </div>
+      <p class="hint">The app looks for a newer version here when it starts and every 30 minutes. Leave it empty to use the address above. Plain http is only accepted for addresses on the local network.</p>
+      <button class="b sec" id="btn-upd-check" style="margin-top:8px">Check for updates</button>
+      <p class="hint" id="d-upd-status"></p>
+    </div>
+
     <div class="card">
       <h2 class="v">About</h2>
       <p class="hint">Card Scanner <span id="ver">1.2</span> — business card capture with ERPNext-ready Excel export and direct ERPNext synchronisation. On-device text recognition, standardised countries, regions and phone numbers. Styled to the Integrated Optics brandbook.</p>
@@ -734,6 +749,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 <script src="history.js"></script>
 <script src="newui.js"></script>
 <script src="docscan.js"></script>
+<script src="updates.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

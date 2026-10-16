@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<!-- An ERPNext instance on the office LAN is often reached over plain http.
 	     Only local addresses are allowed through; everything on the internet
 	     still has to be https, and the app refuses anything else. -->

@@ -44,11 +44,18 @@ test("an unpackaged app does not check for updates", async () => {
 	assert.equal(m.au.listenerCount("update-downloaded"), 0);
 });
 
-test("outside Windows nothing is checked (the installer is Windows only)", async () => {
-	const m = make({ platform: "darwin" });
+test("on Linux nothing is checked (updates are for Windows and macOS)", async () => {
+	const m = make({ platform: "linux" });
 	assert.equal(updater.start(m.deps), null);
 	m.ready(); await tick();
 	assert.equal(m.au.checks, 0);
+});
+
+test("macOS is checked too, with the same schedule", async () => {
+	const m = make({ platform: "darwin" });
+	m.ready(); await updater.start(m.deps);
+	assert.equal(m.au.checks, 1);
+	assert.equal(m.timers[0].ms, 30 * 60 * 1000);
 });
 
 test("packaged: first check after app is ready, then every 30 minutes from one interval", async () => {
@@ -131,4 +138,45 @@ test("a failing dialog does not crash the app", async () => {
 	await tick();
 	assert.equal(m.logs.warn.length, 1);
 	assert.equal(m.au.installs.length, 0);
+});
+
+const FILES = [{ url: "IO Doc Scanner-1.5.0-arm64-mac.zip" }, { url: "IO Doc Scanner-1.5.0-mac.zip" }];
+
+test("macOS: an update that cannot be installed offers the download once per version", async () => {
+	const opened = [];
+	const m = make({ platform: "darwin", answer: 0 });
+	m.deps.arch = "arm64"; m.deps.feedUrl = "http://192.168.1.79:3005/updates/io-doc-scanner";
+	m.deps.shell = { openExternal: (u) => { opened.push(u); return Promise.resolve(); } };
+	m.ready(); await updater.start(m.deps);
+	m.au.emit("update-available", { version: "1.5.0", files: FILES });
+	m.au.emit("error", new Error("Code signature did not pass validation"));
+	await tick();
+	assert.equal(m.dialogs.length, 1);
+	assert.equal(m.dialogs[0].message, "Update 1.5.0 is available");
+	assert.deepEqual(m.dialogs[0].buttons, ["Download", "Later"]);
+	assert.deepEqual(opened, ["http://192.168.1.79:3005/updates/io-doc-scanner/" + encodeURIComponent("IO Doc Scanner-1.5.0-arm64-mac.zip")]);
+	m.au.emit("error", new Error("again")); await tick();
+	assert.equal(m.dialogs.length, 1, "not asked again for the same version");
+});
+
+test("macOS: an Intel Mac is sent to the x64 zip; an error with no update found shows no dialog", async () => {
+	const opened = [];
+	const m = make({ platform: "darwin", answer: 0 });
+	m.deps.arch = "x64"; m.deps.feedUrl = "http://h/u/";
+	m.deps.shell = { openExternal: (u) => { opened.push(u); return Promise.resolve(); } };
+	m.ready(); await updater.start(m.deps);
+	m.au.emit("error", new Error("server down")); await tick();
+	assert.equal(m.dialogs.length, 0);
+	m.au.emit("update-available", { version: "1.5.0", files: FILES });
+	m.au.emit("error", new Error("x")); await tick();
+	assert.equal(opened.length, 1);
+	assert.ok(!/arm64/.test(opened[0]));
+});
+
+test("Windows: an error after update-available never shows the macOS download dialog", async () => {
+	const m = make();
+	m.ready(); await updater.start(m.deps);
+	m.au.emit("update-available", { version: "1.5.0", files: FILES });
+	m.au.emit("error", new Error("x")); await tick();
+	assert.equal(m.dialogs.length, 0);
 });

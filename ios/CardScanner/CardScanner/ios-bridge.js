@@ -26,6 +26,8 @@ function send(name, args) {
 
 window.Android = {
 	appVersion: function () { return window.CS_VERSION || "1.1"; },
+	/* lets the shared web layer (updates.js) tell the phones apart: on iOS a newer version can only be announced */
+	platform: function () { return "ios"; },
 
 	toast: function (msg) { send("toast", [String(msg)]); },
 

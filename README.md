@@ -9,6 +9,7 @@ Also scans accounts documents — purchase/proforma/sales invoices, customs decl
 - `android/CardScanner/` — Android app (Gradle project, WebView shell + Google ML Kit OCR). See `android/CardScanner/README.md` for how it works and `INSTALL.md` for build/signing steps.
 - `ios/CardScanner/` — iOS app (Xcode project, WKWebView shell + VisionKit/Vision OCR bridge). See `ios/CardScanner/BUILD-IOS.md`.
 - `docs/` — install guides (PDF) and UI reference screenshots.
+- `docs/MOBILE-UPDATES.md` — how the phone apps find (Android: install) newer versions from the internal update server; `tools/make-mobile-manifest.js` writes the `mobile.json` they read. Desktop updates: `electron/README.md`.
 - `electron/` — Windows/macOS desktop app (Electron, wrapping the same shared web UI, no native OCR). See `electron/README.md`.
 
 ## Shared web UI

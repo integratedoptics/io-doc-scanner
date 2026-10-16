@@ -116,13 +116,171 @@ public class MainActivity extends Activity {
         web.evaluateJavascript("window.onAndroidBack && window.onAndroidBack()", null);
     }
 
+    // ------------------------------------------------------------------ in-app update helpers
+
+    /** https anywhere; plain http only for localhost and private network addresses. */
+    private static boolean updateAddressAllowed(String urlStr) {
+        try {
+            URL u = new URL(urlStr);
+            String proto = u.getProtocol();
+            if ("https".equalsIgnoreCase(proto)) return true;
+            if (!"http".equalsIgnoreCase(proto)) return false;
+            String h = u.getHost().toLowerCase(java.util.Locale.ROOT);
+            if (h.equals("localhost") || h.endsWith(".local") || h.endsWith(".lan")) return true;
+            if (h.startsWith("10.") || h.startsWith("192.168.") || h.startsWith("127.")) return true;
+            if (h.startsWith("172.")) {
+                String[] p = h.split("\\.");
+                if (p.length > 1) {
+                    int n = Integer.parseInt(p[1]);
+                    return n >= 16 && n <= 31;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Streams urlStr into target, reporting progress; returns the SHA-256 of what was written (lower-case hex). */
+    private String downloadTo(String urlStr, File target) throws Exception {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(urlStr).openConnection();
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(60000);
+            c.setUseCaches(false);
+            int code = c.getResponseCode();
+            if (code != 200) throw new IOException("The update server answered HTTP " + code + ".");
+            long total = c.getContentLengthLong();
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            long done = 0;
+            int lastPct = -1;
+            byte[] buf = new byte[64 * 1024];
+            try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(target)) {
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    md.update(buf, 0, n);
+                    done += n;
+                    if (total > 0) {
+                        int pct = (int) (done * 100 / total);
+                        if (pct != lastPct && pct % 2 == 0) {
+                            lastPct = pct;
+                            updateState("downloading", pct, "");
+                        }
+                    }
+                }
+            }
+            if (total > 0 && done != total) throw new IOException("The download was cut off.");
+            StringBuilder hex = new StringBuilder();
+            for (byte b : md.digest()) hex.append(String.format(java.util.Locale.ROOT, "%02x", b));
+            return hex.toString();
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    /** window.onUpdateState({stage, percent, message}) — see updates.js. */
+    private void updateState(String stage, int percent, String message) {
+        try {
+            JSONObject o = new JSONObject();
+            o.put("stage", stage);
+            o.put("percent", percent);
+            o.put("message", message == null ? "" : message);
+            final String js = "window.onUpdateState && window.onUpdateState(" + o.toString() + ")";
+            web.post(() -> web.evaluateJavascript(js, null));
+        } catch (Exception ignored) {
+            // progress is cosmetic
+        }
+    }
+
     // ------------------------------------------------------------------ bridge
 
     public class Bridge {
 
+        /** The versionName of the installed app (build.gradle), so it never has to be bumped by hand twice. */
         @JavascriptInterface
         public String appVersion() {
-            return "1.4";
+            try {
+                String v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+                return v == null || v.isEmpty() ? "1.4" : v;
+            } catch (Exception e) {
+                return "1.4";
+            }
+        }
+
+        /** Lets the shared web layer tell Android from iOS and desktop (see updates.js). */
+        @JavascriptInterface
+        public String platform() {
+            return "android";
+        }
+
+        /**
+         * In-app update. Downloads the apk at urlStr, checks its SHA-256 (when one is given) and that it is this
+         * very app, then hands it to the system installer, where the user confirms. Progress and failures are
+         * reported to window.onUpdateState({stage, percent, message}); stage is one of "permission" (the
+         * "install unknown apps" switch for this app is off — its settings page was opened), "downloading",
+         * "verifying", "installing" or "error". The web layer only offers this for https or local-network
+         * addresses; the same rule is enforced here.
+         */
+        @JavascriptInterface
+        public void installUpdate(final String urlStr, final String sha256, final String reqId) {
+            new Thread(() -> {
+                try {
+                    if (!updateAddressAllowed(urlStr)) {
+                        updateState("error", 0, "The update address must be https, or http on the local network.");
+                        return;
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                            && !getPackageManager().canRequestPackageInstalls()) {
+                        runOnUiThread(() -> {
+                            Intent i = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    Uri.parse("package:" + getPackageName()));
+                            startActivity(i);
+                        });
+                        updateState("permission", 0, "");
+                        return;
+                    }
+                    File dir = new File(getCacheDir(), "updates");
+                    if (!dir.exists() && !dir.mkdirs()) {
+                        updateState("error", 0, "Could not create the download folder.");
+                        return;
+                    }
+                    File[] old = dir.listFiles();
+                    if (old != null) for (File f : old) //noinspection ResultOfMethodCallIgnored
+                        f.delete();
+                    File apk = new File(dir, "update.apk");
+                    updateState("downloading", 0, "");
+                    String got = downloadTo(urlStr, apk);
+                    updateState("verifying", 100, "");
+                    String want = sha256 == null ? "" : sha256.trim().toLowerCase(java.util.Locale.ROOT);
+                    if (!want.isEmpty() && !want.equals(got)) {
+                        //noinspection ResultOfMethodCallIgnored
+                        apk.delete();
+                        updateState("error", 0, "The downloaded file does not match the checksum in mobile.json — it was not installed.");
+                        return;
+                    }
+                    android.content.pm.PackageInfo pi = getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+                    if (pi == null) {
+                        updateState("error", 0, "The downloaded file is not a valid apk.");
+                        return;
+                    }
+                    if (!getPackageName().equals(pi.packageName)) {
+                        updateState("error", 0, "The downloaded apk belongs to a different app (" + pi.packageName + ").");
+                        return;
+                    }
+                    final Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", apk);
+                    runOnUiThread(() -> {
+                        Intent i = new Intent(Intent.ACTION_VIEW);
+                        i.setDataAndType(uri, "application/vnd.android.package-archive");
+                        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                    });
+                    updateState("installing", 100, "");
+                } catch (Exception e) {
+                    updateState("error", 0, (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+                }
+            }).start();
         }
 
         @JavascriptInterface
