@@ -1,0 +1,125 @@
+/* desktop.css — the wide layout of the Windows / macOS apps.
+
+   Every rule starts with html.desktop, a class that index.html sets only when the native bridge says it is the desktop
+   shell (window.Android.platform() === "desktop"). The phone apps and a plain browser never match, so their layout is
+   exactly the one in index.html.
+
+   Shape: a left sidebar for the five screens instead of the bottom bar; the work screens use the full width in
+   clear, titled sections. Scan and Documents have the picture / the document on the left (it stays in view while the
+   fields on the right are scrolled) and the fields in boxes on the right: Document, Supplier, Amounts, Item lines,
+   Review, Send. */
+
+html.desktop .mobonly{display:none}
+html.desktop .deskonly{display:block}
+html.desktop body{font-size:14px;display:grid;grid-template-columns:208px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:100%}
+
+/* ------------------------------------------------------------------ header and sidebar */
+html.desktop header{grid-column:1/-1;grid-row:1;padding:10px 24px 0}
+html.desktop header h1{font-size:17px}
+html.desktop .logo{height:34px}
+html.desktop nav{grid-column:1;grid-row:2;display:flex;flex-direction:column;gap:3px;padding:16px 12px;
+  border-top:0;border-right:1px solid var(--line);overflow-y:auto}
+html.desktop nav button{flex-direction:row;justify-content:flex-start;align-items:center;gap:12px;width:100%;
+  font-size:14px;padding:11px 14px;margin:0;border-top:0;border-left:4px solid transparent;border-radius:10px;cursor:pointer;text-align:left}
+html.desktop nav button svg{width:20px;height:20px}
+html.desktop nav button:hover{background:var(--lgrey)}
+html.desktop nav button.on{background:var(--po);border-left-color:var(--orange)}
+html.desktop main{grid-column:2;grid-row:2;padding:22px 28px 44px;min-width:0}
+html.desktop .view{max-width:1800px;margin:0 auto}
+html.desktop #toast{bottom:26px;left:calc(50% + 104px);max-width:60%}
+html.desktop #movehint{bottom:26px}
+
+/* ------------------------------------------------------------------ common parts */
+html.desktop .card{padding:18px 20px;border-radius:12px;margin-bottom:16px}
+html.desktop .card h2,html.desktop .zone>h2{font-size:12px;margin-bottom:14px}
+html.desktop .zone>h2{margin-top:0!important}
+html.desktop input,html.desktop select,html.desktop textarea{padding:8px 10px;font-size:14px;border-radius:8px}
+html.desktop textarea{min-height:76px}
+html.desktop button.b{width:auto;min-width:170px;padding:10px 20px;border-radius:10px;margin:0 8px 8px 0;cursor:pointer}
+html.desktop button.b:hover:not(:disabled){filter:brightness(.96)}
+html.desktop .row{gap:14px}
+html.desktop .row>*{min-width:0}
+html.desktop .f{margin-bottom:12px}
+html.desktop .split{cursor:default}
+html.desktop .sw,html.desktop .chkrow,html.desktop label.pick,html.desktop summary,html.desktop .seg button{cursor:pointer}
+html.desktop details{margin-bottom:14px}
+
+/* a titled box of fields */
+html.desktop .zone{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:16px 18px;min-width:0}
+
+/* ------------------------------------------------------------------ Scan (business card) */
+html.desktop #v-scan.on{display:grid;grid-template-columns:minmax(300px,340px) minmax(0,1fr);gap:20px;align-items:start}
+html.desktop .scanpane{position:sticky;top:0}
+html.desktop .scanpane button.b{width:100%;margin-right:0}
+html.desktop .scanpane .preview{max-height:56vh;object-fit:contain;background:#fff;padding:6px}
+html.desktop .scanmain{min-width:0}
+/* the boxes flow down two balanced columns (three on a very wide screen) */
+html.desktop #box-form{display:block;column-count:2;column-gap:16px;background:none;border:0;padding:0;margin:0}
+html.desktop #box-form>.zone{break-inside:avoid;margin-bottom:16px}
+html.desktop #box-form>#warn,html.desktop #box-form>p.hint,html.desktop #box-form .zone-more,html.desktop #box-form .zone-actions{column-span:all}
+html.desktop #box-form>#warn,html.desktop #box-form>p.hint{margin:0 0 12px}
+html.desktop #box-form .zone-more{background:none;border:0;padding:0;margin:0}
+html.desktop #box-form .zone-more details{margin:0 0 10px;background:var(--white)}
+html.desktop .zone-sync .split:first-of-type{border-top:0}
+html.desktop .zone-actions{background:none;border:0;padding:4px 0 0;display:flex;flex-wrap:wrap;align-items:center}
+@media (min-width:1800px){
+  html.desktop #box-form{column-count:3}
+}
+
+/* ------------------------------------------------------------------ Documents */
+html.desktop #v-docs.on{display:grid;grid-template-columns:minmax(340px,40%) minmax(0,1fr);gap:20px;align-items:start}
+html.desktop .docpane{position:sticky;top:0;min-width:0}
+html.desktop .docpane .card{margin-bottom:12px}
+html.desktop .docpane button.b{width:100%;margin-right:0}
+html.desktop .docpane .card .hint:last-child{font-size:11.5px}
+html.desktop #d-preview{display:none!important}
+html.desktop details.viewcard{padding:12px 14px 10px}
+html.desktop details.viewcard>summary{display:none}
+html.desktop .dvpages{height:calc(100vh - 372px);min-height:300px;max-height:none}
+html.desktop .docmain{min-width:0}
+html.desktop #box-doc-form{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;background:none;border:0;padding:0;margin:0 0 16px;align-items:start;grid-auto-flow:dense}
+html.desktop #box-doc-form>#d-warn{grid-column:1/-1;margin:0}
+html.desktop #box-doc-form>#d-warn:empty{display:none}
+/* the document's own fields on the left, the supplier / customer and the amounts stacked on the right */
+html.desktop .zone-new,html.desktop .zone-review,html.desktop .zone-send,html.desktop .zone-parent{grid-column:1/-1}
+html.desktop .zone-send{background:none;border:0;padding:0}
+html.desktop .zone-send #d-stat{margin-top:6px}
+html.desktop .zone-send #d-stat:empty{display:none}
+html.desktop .zone-send button.b{margin-bottom:6px}
+html.desktop #d-lines .li{padding:12px}
+html.desktop #d-box-awb,html.desktop #d-box-lines,html.desktop #d-box-charges{margin-top:6px}
+@media (min-width:1360px){
+  html.desktop #box-doc-form{grid-template-columns:repeat(2,minmax(0,1fr))}
+  html.desktop .zone-doc{grid-column:1;grid-row:span 2}
+  html.desktop .zone-party,html.desktop .zone-amount{grid-column:2}
+}
+@media (max-width:1100px){
+  html.desktop #v-docs.on,html.desktop #v-scan.on{grid-template-columns:minmax(0,1fr)}
+  html.desktop .docpane,html.desktop .scanpane{position:static}
+  html.desktop .dvpages{height:60vh}
+}
+
+/* the review box: the ticks on the left, status / name / note on the right */
+html.desktop #d-review{border-left:4px solid var(--grey);padding-left:18px;margin-top:0}
+html.desktop #d-review.rv-ok,html.desktop #d-review.rv-fixed{border-left-color:var(--green)}
+html.desktop #d-review.rv-problem{border-left-color:var(--err)}
+html.desktop .rvcols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 28px}
+html.desktop .rvr textarea{min-height:110px}
+html.desktop .rvrow:hover{border-color:var(--green)}
+@media (max-width:1100px){html.desktop .rvcols{grid-template-columns:minmax(0,1fr)}}
+
+/* ------------------------------------------------------------------ Cards, Export, Settings */
+html.desktop #v-cards .row{max-width:440px}
+html.desktop #list{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+html.desktop #list .item{margin:0;cursor:pointer}
+html.desktop #list .empty{grid-column:1/-1}
+html.desktop #v-export.on{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+html.desktop #v-export .card{margin:0}
+html.desktop #v-set.on{display:block;column-count:2;column-gap:20px}
+html.desktop #v-set .card{break-inside:avoid;margin-bottom:20px}
+@media (min-width:1700px){html.desktop #v-set.on{column-count:3}}
+@media (max-width:1100px){
+  html.desktop #v-set.on{column-count:1}
+  html.desktop #v-export.on{grid-template-columns:minmax(0,1fr)}
+}
+html.desktop .zone-address button.b{width:100%;margin-right:0}

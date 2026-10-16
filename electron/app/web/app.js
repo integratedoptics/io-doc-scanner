@@ -91,7 +91,9 @@ var DEFAULTS = {
 	/* which of the three switches a new card starts with */
 	sync_org: false, sync_contact: true, sync_address: true,
 	/* phone apps: where to look for a newer version (empty = the built-in address), and the version the user dismissed */
-	update_url: "", update_dismissed: ""
+	update_url: "", update_dismissed: "",
+	/* the name written on a document review */
+	reviewer: ""
 };
 
 var EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]{2,}/g;
@@ -1449,6 +1451,7 @@ loadState();
 window.CS_ERP_CONFIGURE_ALL(S);
 wire();
 if (window.CS_DOCSCAN) window.CS_DOCSCAN.init();
+if (window.CS_REVIEW) window.CS_REVIEW.init({ settings: function () { return S; }, save: saveSettings });
 if (window.CS_UPDATES) window.CS_UPDATES.init({ settings: function () { return S; }, save: saveSettings, toast: toast,
 	grab: function () { S.update_url = $("s-upd-url").value.trim(); saveSettings(); } });
 paintCountryList();

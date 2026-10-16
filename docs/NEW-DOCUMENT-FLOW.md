@@ -1,4 +1,4 @@
-# New document flow (test server) — IO Doc Scanner 1.4
+# New document flow (test server) — IO Doc Scanner 1.4 / 1.5
 
 The app now has two ways of filing a scanned document. They run side by side.
 

@@ -15,7 +15,7 @@
    trade-off. */
 "use strict";
 
-const { app, BrowserWindow, ipcMain, dialog, nativeImage, session, systemPreferences } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, session, systemPreferences } = require("electron");
 const path = require("path");
 const { URL } = require("url");
 const httpClient = require("./http");
@@ -24,11 +24,13 @@ const WEB_DIR = path.join(__dirname, "web");
 const WEB_ENTRY = path.join(WEB_DIR, "index.html");
 
 function createWindow() {
+	// a wide window: the desktop layout (web/desktop.css) puts the document or card picture beside its fields
+	const area = screen.getPrimaryDisplay().workAreaSize;
 	const win = new BrowserWindow({
-		width: 480,
-		height: 860,
-		minWidth: 380,
-		minHeight: 560,
+		width: Math.min(1440, area.width),
+		height: Math.min(920, area.height),
+		minWidth: 1000,
+		minHeight: 640,
 		title: "IO Doc Scanner",
 		icon: path.join(__dirname, "icon.png"), // window/taskbar icon on Windows and Linux
 		webPreferences: {

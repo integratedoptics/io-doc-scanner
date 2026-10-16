@@ -1,6 +1,6 @@
 {
   "name": "io-doc-scanner-desktop",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "IO Doc Scanner for Windows and macOS — business card and accounts-document scanning for ERPNext.",
   "private": true,
   "main": "app/main.js",

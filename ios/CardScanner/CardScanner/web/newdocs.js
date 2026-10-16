@@ -597,7 +597,8 @@ function createPurchaseInvoice(fields, lines, file, charges) {
 			return Promise.all([
 				resolveField("Purchase Invoice", ["tracking_awb"], "tracking_awb_no"),
 				resolveField("Purchase Invoice", ["scanned_invoice"], "scanned_invoice"),
-				taxRows(charges, ci.name, notes)
+				taxRows(charges, ci.name, notes),
+				fields.reviewNote ? resolveField("Purchase Invoice", ["remarks"], "remarks") : Promise.resolve("")
 			]).then(function (names) {
 				var taxes = names[2];
 				var doc = {
@@ -615,6 +616,7 @@ function createPurchaseInvoice(fields, lines, file, charges) {
 				};
 				if (fields.paymentDueDate && fields.paymentDueDate >= posting) doc.due_date = fields.paymentDueDate;
 				if (fields.trackingNumber && names[0]) doc[names[0]] = fields.trackingNumber;
+				if (fields.reviewNote && names[3]) doc[names[3]] = fields.reviewNote;
 				return T().clean("Purchase Invoice", doc, notes).then(function (cl) {
 					return T().createDoc("Purchase Invoice", cl.doc, notes).then(function (name) {
 						var out = { name: name, notes: notes, created: [], supplier: supplier };
@@ -666,7 +668,8 @@ function createSupplierQuotation(fields, lines, file, charges) {
 		return companyInfo();
 	}).then(function (ci) {
 		var date = fields.documentDate || today();
-		return Promise.all([exchangeRate(fields.currency, ci.currency, date), taxRows(charges, ci.name, notes)]).then(function (rt) {
+		return Promise.all([exchangeRate(fields.currency, ci.currency, date), taxRows(charges, ci.name, notes),
+			fields.reviewNote ? resolveField("Supplier Quotation", ["remarks", "comment"], "") : Promise.resolve("")]).then(function (rt) {
 			var rate = rt[0], taxes = rt[1];
 			var doc = {
 				supplier: supplier,
@@ -680,6 +683,10 @@ function createSupplierQuotation(fields, lines, file, charges) {
 				taxes: taxes.length ? taxes : undefined,
 				items: itemRows(lines, function (row, l) { if (l.code) row.supplier_part_no = l.code; })
 			};
+			if (fields.reviewNote) {
+				if (rt[2]) doc[rt[2]] = fields.reviewNote;
+				else notes.push({ field: "", message: "The Supplier Quotation has no remarks field on this server, so the review note was not saved with it (it is in the upload history)." });
+			}
 			return T().clean("Supplier Quotation", doc, notes).then(function (cl) {
 				return T().createDoc("Supplier Quotation", cl.doc, notes).then(function (name) {
 					var out = { name: name, notes: notes, created: [], supplier: supplier };
@@ -748,7 +755,7 @@ function stripLocal(v) {
    still open and the links back to the order come out exactly as when it is done by hand), the AWB written in, and the
    waybill attached. Draft, not submitted. Resolves [{ order, name, file, notes, error }] — one failure does not stop
    the others. */
-function createReceipts(orders, awb, file) {
+function createReceipts(orders, awb, file, remark) {
 	var out = [];
 	return orders.reduce(function (chain, order) {
 		return chain.then(function () {
@@ -760,8 +767,10 @@ function createReceipts(orders, awb, file) {
 					doc = stripLocal(doc);
 					delete doc.name; delete doc.creation; delete doc.modified; delete doc.owner; delete doc.modified_by;
 					doc.docstatus = 0;
-					return resolveField("Purchase Receipt", ["tracking_awb"], "tracking_awb_no").then(function (f) {
-						if (awb && f) doc[f] = awb;
+					return Promise.all([resolveField("Purchase Receipt", ["tracking_awb"], "tracking_awb_no"),
+						remark ? resolveField("Purchase Receipt", ["remarks"], "remarks") : Promise.resolve("")]).then(function (fs) {
+						if (awb && fs[0]) doc[fs[0]] = awb;
+						if (remark && fs[1]) doc[fs[1]] = doc[fs[1]] ? doc[fs[1]] + "\n" + remark : remark;
 						return T().createDoc("Purchase Receipt", doc, notes);
 					});
 				}).then(function (name) {

@@ -108,7 +108,10 @@ window.CS_CAMERA_BEFORE = function () { return ipcRenderer.invoke("camera-access
 /* ------------------------------------------------------------------- the bridge */
 
 window.Android = {
-	appVersion: function () { return "1.4-desktop"; },
+	/* the version in package.json, so a release only has to change it there */
+	appVersion: function () { try { return require("../package.json").version + "-desktop"; } catch (e) { return "desktop"; } },
+	/* tells the shared web layer to use the wide desktop layout (desktop.css) */
+	platform: function () { return "desktop"; },
 	toast: function (msg) { console.log("[toast]", msg); },
 
 	/* Webcam: same pipeline as a picture chosen from disk afterwards. */

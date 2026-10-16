@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Card Scanner</title>
+<script>
+/* the desktop apps (Windows / macOS) get a wide layout from desktop.css; phones and browsers keep the phone layout */
+try { if (window.Android && window.Android.platform && window.Android.platform() === "desktop") document.documentElement.className += " desktop"; } catch (e) {}
+</script>
 <style>
 /* ============================================================================
    Integrated Optics brand styling
@@ -229,7 +233,27 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 .updbar .ue{color:#b02a2a;font-weight:700}
 .updbar .ub{margin:4px 6px 0 0;border:0;border-radius:99px;padding:6px 14px;font-weight:700;background:var(--orange);color:var(--black);font-size:13px}
 .updbar .ub.sec{background:transparent;border:1px solid var(--orange)}
+
+/* ---------------------------------------------- document viewer and review box (phones and desktop) */
+.deskonly{display:none}
+details.viewcard{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+details.viewcard>summary{font-size:11px;text-transform:uppercase;letter-spacing:.9px;color:var(--orange);font-weight:bold;cursor:pointer}
+.dvbar{display:flex;align-items:center;gap:6px;margin:10px 0 8px;flex-wrap:wrap}
+.dvbar button{border:1px solid var(--grey);background:var(--white);border-radius:8px;padding:5px 11px;font:inherit;font-size:13px;font-weight:bold;cursor:pointer}
+.dvbar button:disabled{opacity:.4}
+.dvbar .hint{margin:0 0 0 auto}
+#dv-zoom{font-size:12px;min-width:42px;text-align:center;color:var(--dgrey)}
+.dvpages{background:#8e8f90;border-radius:10px;padding:6px;max-height:70vh;overflow:auto;-webkit-overflow-scrolling:touch}
+.dvpages canvas,.dvpages img{display:block;margin:0 auto 6px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.rvrow{display:flex;align-items:center;gap:10px;margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;font-size:14px;letter-spacing:0;color:var(--black);cursor:pointer;background:#fff}
+.rvrow input{width:20px;height:20px;flex:0 0 auto;margin:0;padding:0;accent-color:var(--green)}
+.rvrow.on{background:var(--pg);border-color:var(--green)}
+#d-review{border-left:4px solid var(--grey);padding-left:10px;margin-top:16px}
+#d-review.rv-ok,#d-review.rv-fixed{border-left-color:var(--green)}
+#d-review.rv-problem{border-left-color:var(--err)}
+#rv-sum{font-weight:bold;color:var(--black)}
 </style>
+<link rel="stylesheet" href="desktop.css">
 </head>
 <body>
 
@@ -250,19 +274,23 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 
   <!-- ============================================================ SCAN -->
   <section class="view on" id="v-scan">
+   <div class="scanpane">
     <div class="card">
       <h2>Capture</h2>
       <button class="b" id="btn-cam">Take a photo of a card</button>
       <button class="b sec" id="btn-pick">Choose an existing picture</button>
       <p class="hint">Text is recognised on the device. Nothing leaves the phone unless you switch on AI cleanup in Settings.</p>
     </div>
-
+    <img class="preview" id="prev" alt="">
+   </div>
+   <div class="scanmain">
     <div class="card" id="box-form" style="display:none">
-      <h2>Recognised fields</h2>
-      <img class="preview" id="prev" alt="">
+      <h2 class="mobonly">Recognised fields</h2>
       <div id="warn"></div>
       <p class="hint" style="margin:0 0 12px">Text in the wrong box? Hold a field for a second, then slide your finger to the right box and let go.</p>
 
+      <div class="zone zone-person">
+      <h2 class="deskonly">Person</h2>
       <div class="row">
         <div><label>Salutation</label><input id="f-salutation" placeholder="Mr"></div>
         <div><label>First name <span class="mand">*</span></label><input id="f-first_name"></div>
@@ -276,6 +304,10 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
         <div><label>Department</label><input id="f-department"></div>
         <div><label>Company</label><input id="f-company_name"></div>
       </div>
+      </div>
+
+      <div class="zone zone-contact">
+      <h2 class="deskonly">Contact</h2>
       <div class="f"><label>Email</label><input id="f-email" type="email" inputmode="email" autocapitalize="off"></div>
 
       <label class="chkrow" for="f-newsletter">
@@ -297,7 +329,9 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
         <input id="f-linkedin" autocapitalize="off" spellcheck="false" placeholder="https://www.linkedin.com/in/…">
         <p class="hint" id="li-note" style="display:none"></p>
       </div>
+      </div>
 
+      <div class="zone zone-address">
       <h2 style="margin-top:16px">Address</h2>
       <div class="f"><label>Address line 1 <span class="mand">*</span></label><input id="f-address_line1"></div>
       <div class="f"><label>Address line 2</label><input id="f-address_line2"></div>
@@ -311,7 +345,9 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       </div>
       <p class="hint">Fields marked <span class="mand">*</span> are mandatory in the ERPNext import templates. An address row is exported only when line 1, city and country are filled in.</p>
       <button class="b sec" id="btn-norm" style="margin-top:4px">Standardise country, region and phone numbers</button>
+      </div>
 
+      <div class="zone zone-sync">
       <h2 class="g" style="margin-top:16px">Synchronise with ERPNext</h2>
       <div class="f"><label>Organisation record</label>
         <select id="f-sync_doctype">
@@ -330,7 +366,9 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <div id="sync-stat"></div>
       <button class="b" id="btn-sync-one" style="margin-top:10px">Send this card to ERPNext</button>
       <p class="hint">The organisation is written first so the contact and the address can be linked to it. A record that already exists is left untouched and reported as a duplicate.</p>
+      </div>
 
+      <div class="zone zone-more">
       <details style="margin-top:14px">
         <summary>Manual link and notes</summary>
         <div class="row" style="margin-top:9px">
@@ -352,11 +390,15 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
         <textarea id="f-raw_text" style="margin-top:9px"></textarea>
         <button class="b sec" id="btn-reparse" style="margin-top:9px">Parse this text again</button>
       </details>
+      </div>
 
+      <div class="zone zone-actions">
       <button class="b ok" id="btn-save">Save card</button>
       <button class="b sec" id="btn-ai">Clean up with AI</button>
       <button class="b sec" id="btn-cancel">Discard</button>
+      </div>
     </div>
+   </div>
   </section>
 
   <!-- =========================================================== CARDS -->
@@ -575,6 +617,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 
   <!-- ============================================================ DOCS -->
   <section class="view" id="v-docs">
+   <div class="docpane">
     <div class="card">
       <h2>Scan a document</h2>
       <div class="f"><label>Document type</label>
@@ -597,10 +640,26 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <p class="hint">Invoices and customs papers in English, Lithuanian or German. A PDF's text is read on the device and filled in by a built-in reader straight away; with an Anthropic key set in Settings, Claude then reads it too (scans and photos are sent to Claude as a picture). Check every field before approving.</p>
     </div>
 
+    <details class="viewcard" id="d-viewcard" style="display:none">
+      <summary id="dv-title">Show the document</summary>
+      <div class="dvbar">
+        <button type="button" id="dv-out" title="Zoom out">&minus;</button>
+        <span id="dv-zoom">100 %</span>
+        <button type="button" id="dv-in" title="Zoom in">+</button>
+        <button type="button" id="dv-fit">Fit width</button>
+        <span class="hint" id="dv-info"></span>
+      </div>
+      <div class="dvpages" id="dv-pages"></div>
+    </details>
+   </div>
+
+   <div class="docmain">
     <div class="card" id="box-doc-form" style="display:none">
-      <h2>Recognised fields</h2>
+      <h2 class="mobonly">Recognised fields</h2>
       <div id="d-warn"></div>
 
+      <div class="zone zone-doc">
+      <h2 class="deskonly">Document</h2>
       <div class="row">
         <div><label>Document no. <span class="mand">*</span></label><input id="d-document_no"></div>
         <div><label>Document date <span class="mand">*</span></label><input id="d-document_date" placeholder="YYYY-MM-DD"></div>
@@ -625,8 +684,9 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
           <option value="out">We issued it (Integrated Optics UAB / IO Integrated Optics GmbH)</option>
         </select>
       </div>
+      </div>
 
-      <div id="d-box-supplier">
+      <div id="d-box-supplier" class="zone zone-party">
         <h2 style="margin-top:16px">Supplier</h2>
         <div class="f"><label>Supplier name <span class="mand">*</span></label><input id="d-supplier_name"></div>
         <div class="row">
@@ -636,7 +696,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
         <div id="d-dupe-box"></div>
       </div>
 
-      <div id="d-box-customer" style="display:none">
+      <div id="d-box-customer" class="zone zone-party" style="display:none">
         <h2 style="margin-top:16px">Customer</h2>
         <p class="hint" id="d-issuer-note"></p>
         <div class="f"><label>Customer name <span class="mand">*</span></label><input id="d-customer_name"></div>
@@ -647,13 +707,16 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
         <div id="d-cust-box"></div>
       </div>
 
+      <div class="zone zone-amount">
+      <h2 class="deskonly">Amounts</h2>
       <div class="row">
         <div><label>Currency (for your reference)</label><input id="d-currency"></div>
         <div><label>Total amount (for your reference)</label><input id="d-total_amount" inputmode="decimal"></div>
       </div>
       <p class="hint">Currency and total are shown so you can sanity-check the scan against the document — they are not written to ERPNext by this screen.</p>
+      </div>
 
-      <div id="d-new" style="display:none">
+      <div id="d-new" class="zone zone-new" style="display:none">
         <h2 style="margin-top:16px" id="d-new-title">Test server</h2>
         <div class="split" id="d-send-live-row"><span>Send to the live server (Accounts Document, as before)</span>
           <label class="sw"><input type="checkbox" id="d-send-live" checked><i></i></label></div>
@@ -682,7 +745,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
         </div>
       </div>
 
-      <div id="d-row-parent" style="display:none">
+      <div id="d-row-parent" class="zone zone-parent" style="display:none">
         <h2 style="margin-top:16px" id="d-parent-title">Record to file it under</h2>
         <div class="f"><label>Likely match</label>
           <select id="d-parent"></select>
@@ -693,12 +756,40 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
         </div>
       </div>
 
+      <div id="d-review" class="zone zone-review">
+        <h2 class="v">Review &mdash; manual check</h2>
+        <p class="hint" style="margin:0 0 9px">Compare the fields with the document and tick what you have checked. Sending does not depend on it; what you record here is written to the remarks of the ERPNext record and to the upload history.</p>
+        <div class="rvcols">
+        <div class="rvl">
+        <div id="rv-checks"></div>
+        <button class="b sec" id="rv-all" type="button" style="margin:2px 0 10px">Mark everything as checked</button>
+        </div>
+        <div class="rvr">
+        <div class="row">
+          <div><label>Review status</label>
+            <select id="rv-status">
+              <option value="pending">Not reviewed</option>
+              <option value="ok">Checked &mdash; OK</option>
+              <option value="fixed">Checked &mdash; corrected by me</option>
+              <option value="problem">Problem &mdash; needs attention</option>
+            </select>
+          </div>
+          <div><label>Reviewed by</label><input id="rv-by" autocapitalize="words" placeholder="your name"></div>
+        </div>
+        <div class="f"><label>Review note</label><textarea id="rv-note" placeholder="What was wrong, what you changed, what to look at…"></textarea></div>
+        <p class="hint" id="rv-sum"></p>
+        </div>
+        </div>
+      </div>
+
+      <div class="zone zone-send">
       <p class="hint" id="d-notes"></p>
 
       <div id="d-stat"></div>
       <button class="b ok" id="btn-doc-approve">Approve &amp; send to ERPNext</button>
       <button class="b sec" id="btn-doc-extract">Re-run extraction</button>
       <button class="b sec" id="btn-doc-cancel">Discard</button>
+      </div>
     </div>
 
     <div class="card" id="d-hist-card">
@@ -714,6 +805,7 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
       <button class="b sec" id="btn-dupe-scan">Scan supplier list</button>
       <div id="d-dupe-scan"></div>
     </details>
+   </div>
   </section>
 
 </main>
@@ -748,6 +840,8 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 <script src="camera.js"></script>
 <script src="history.js"></script>
 <script src="newui.js"></script>
+<script src="docview.js"></script>
+<script src="review.js"></script>
 <script src="docscan.js"></script>
 <script src="updates.js"></script>
 <script src="app.js"></script>

@@ -358,7 +358,8 @@ function fieldsOf(f) {
 		currency: $("d-currency").value.trim().toUpperCase(),
 		totalAmount: tot === "" ? null : N()._internals.num(tot),
 		trackingNumber: $("d-tracking_number").value.trim(),
-		validUntil: $("d-valid_until").value.trim()
+		validUntil: $("d-valid_until").value.trim(),
+		reviewNote: f.reviewNote || ""
 	};
 }
 
@@ -419,7 +420,7 @@ function send(type, attachmentKind, f, file) {
 			? N().attachToReceipts(state.receipts, file).then(function (r) {
 				return r.map(function (x) { return { name: x.name, file: x.file, existing: true, notes: [] }; });
 			})
-			: N().createReceipts(picked, fields.trackingNumber, file);
+			: N().createReceipts(picked, fields.trackingNumber, file, fields.reviewNote);
 		return job.then(function (rs) {
 			var all = true, names = [], errs = [], notesAll = [];
 			rs.forEach(function (r) {

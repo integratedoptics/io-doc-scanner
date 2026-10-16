@@ -410,6 +410,8 @@ function sectionPatch(section, fields) {
 		   clean()/ensureLink tries as an exact match and drops with a note if ERPNext has none */
 		if (fields.customerLink || fields.customerName) patch.customer = fields.customerLink || fields.customerName;
 	}
+	/* the employee's manual review of the document goes into the record's comment */
+	if (fields.reviewNote) patch.comment = patch.comment ? patch.comment + "\n" + fields.reviewNote : fields.reviewNote;
 	return patch;
 }
 
@@ -489,7 +491,7 @@ function createChild(section, parentName, fields, fileDataUrl, fileName) {
 			throw new Error(parentName + " is itself a child of " + parent.parent_document +
 				" — pick that parent record instead.");
 		}
-		var patch = attachment ? { comment: fields.comment || "" } : sectionPatch(section, fields);
+		var patch = attachment ? { comment: [fields.comment || "", fields.reviewNote || ""].filter(Boolean).join("\n") } : sectionPatch(section, fields);
 		/* A customs declaration / CD invoice / shipping invoice fills ONLY its own section's number and date
 		   (CD Document No, CD Date, ...): the main "Document No" and "Document Date" stay empty. Both are
 		   mandatory in some ERPNext set-ups; only when the server says so (createWithMandatory) the parent

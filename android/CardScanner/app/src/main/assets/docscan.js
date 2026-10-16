@@ -94,6 +94,7 @@ function updateTypeUi() {
 	}
 	if (sec !== "main" && !quo) loadParentCandidates();
 	if (window.CS_NEWUI) window.CS_NEWUI.update(t, state.attachmentKind, filling);
+	if (window.CS_REVIEW) window.CS_REVIEW.refresh();
 }
 
 function resetForm(keepStatus) {
@@ -120,6 +121,9 @@ function resetForm(keepStatus) {
 	state.dataUrl = null; state.fileName = ""; state.supplierLink = ""; state.customerLink = ""; state.kind = "pdf"; state.run++;
 	state.refs = []; state.poMatched = null; state.poUnmatched = null; state.attachmentKind = ""; state.liveDone = false;
 	if (window.CS_NEWUI) window.CS_NEWUI.reset();
+	if (window.CS_REVIEW) window.CS_REVIEW.reset();
+	if (window.CS_DOCVIEW) window.CS_DOCVIEW.clear();
+	$("d-viewcard").style.display = "none";
 	$("d-preview").style.display = "none"; $("d-preview").removeAttribute("src");
 	$("box-doc-form").style.display = "none";
 }
@@ -154,7 +158,8 @@ function readFields() {
 		supplierCode: sales ? "" : code(),
 		supplierLink: sales ? "" : state.supplierLink,
 		customerName: sales ? $("d-customer_name").value.trim() : "",
-		customerLink: sales ? state.customerLink : ""
+		customerLink: sales ? state.customerLink : "",
+		reviewNote: window.CS_REVIEW ? window.CS_REVIEW.text() : ""
 	};
 }
 
@@ -339,6 +344,17 @@ function loadParentCandidates() {
 
 /* ------------------------------------------------------------- PDF + extract */
 
+/* The attached document is shown for the manual review: always open beside the form on the desktop apps,
+   behind "Show the document" on the phones (drawn when it is opened). */
+function desktop() { return document.documentElement.className.indexOf("desktop") >= 0; }
+function showViewer() {
+	var card = $("d-viewcard");
+	card.style.display = "";
+	if (window.CS_DOCVIEW) window.CS_DOCVIEW.show(state.dataUrl, state.kind);
+	if (desktop()) card.open = true;
+	if (window.CS_DOCVIEW) window.CS_DOCVIEW.setVisible(card.open);
+}
+
 function acceptFile(dataUrl, name) {
 	state.dataUrl = dataUrl;
 	state.kind = kindOf(dataUrl);
@@ -347,6 +363,7 @@ function acceptFile(dataUrl, name) {
 	if (state.kind === "image") { $("d-preview").src = dataUrl; $("d-preview").style.display = ""; }
 	else { $("d-preview").style.display = "none"; $("d-preview").removeAttribute("src"); }
 	$("box-doc-form").style.display = "";
+	showViewer();
 	updateTypeUi();
 	runExtraction();
 }
@@ -688,6 +705,8 @@ function approve() {
 	var out = [];
 	function head(label) { return both ? '<p class="hint"><b>' + label + "</b></p>" : ""; }
 	var rec = { type: DOC_TYPE_LABELS[t] || t, docNo: f.documentNo || "", supplier: f.supplierName || f.customerName || "", file: state.fileName || "", results: [] };
+	var rv = window.CS_REVIEW ? window.CS_REVIEW.value() : null;
+	if (rv) rec.review = rv;
 	var stage = "Live";
 	function logResult(server, r) {
 		if (!r) return;
@@ -830,6 +849,10 @@ function init() {
 	$("btn-doc-photo").style.display =
 		((window.Android && typeof window.Android.captureDocument === "function") ||
 			(window.CS_CAMERA && window.CS_CAMERA.available())) ? "" : "none";
+	$("d-viewcard").addEventListener("toggle", function () {
+		if (window.CS_DOCVIEW) window.CS_DOCVIEW.setVisible($("d-viewcard").open);
+	});
+	if (window.CS_DOCVIEW) window.CS_DOCVIEW.init();
 	$("btn-doc-extract").onclick = function () { if (state.dataUrl) runExtraction(); };
 	$("btn-doc-cancel").onclick = function () { resetForm(); };
 	$("btn-doc-approve").onclick = approve;

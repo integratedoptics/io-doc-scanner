@@ -191,5 +191,14 @@ function extractText(dataUrl) {
 	});
 }
 
-return { extractText: extractText, ready: init, layoutText: layoutText };
+/* The pdf.js document itself, for the on-screen viewer (docview.js). Resolves the PDFDocumentProxy. */
+function openDoc(dataUrl) {
+	var err = init();
+	if (err) return Promise.reject(new Error(err));
+	var bytes;
+	try { bytes = dataUrlToBytes(dataUrl); } catch (e) { return Promise.reject(new Error("Could not read that file as a PDF.")); }
+	return window.pdfjsLib.getDocument({ data: bytes }).promise;
+}
+
+return { extractText: extractText, ready: init, layoutText: layoutText, openDoc: openDoc };
 })();

@@ -77,12 +77,20 @@ function resultHtml(r) {
 	return html;
 }
 
+/* the manual review that was recorded with the document, if any */
+function reviewHtml(r) {
+	if (!r) return "";
+	var level = r.status === "problem" ? "herr" : (r.status === "pending" ? "hn" : "hok");
+	return '<div class="hs ' + level + '"><b>Review</b>: ' + esc(r.label || r.status) + " \u2014 " + (r.checked ? r.checked.length : 0) + " of " + (r.total || 0) + " checked" +
+		(r.by ? " by " + esc(r.by) : "") + (r.note ? '<div class="hn">' + esc(r.note) + "</div>" : "") + "</div>";
+}
+
 function rowHtml(rec) {
 	var st = rec.status || statusOf(rec);
 	var what = [rec.type, rec.docNo, rec.supplier].filter(Boolean).map(esc).join(" · ");
 	return '<div class="uhrow"><div class="hh"><span class="pill ' + LEVEL[st] + '">' + LABEL[st] + '</span> <span class="ht">' + esc(when(rec.ts)) + "</span></div>" +
 		'<div class="hm">' + (what || "Document") + (rec.file ? ' <span class="ht">(' + esc(rec.file) + ")</span>" : "") + "</div>" +
-		(rec.results || []).map(resultHtml).join("") + "</div>";
+		reviewHtml(rec.review) + (rec.results || []).map(resultHtml).join("") + "</div>";
 }
 
 function render() {
