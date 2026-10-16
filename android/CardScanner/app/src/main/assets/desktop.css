@@ -22,6 +22,19 @@ html.desktop nav{grid-column:1;grid-row:2;display:flex;flex-direction:column;gap
 html.desktop nav button{flex-direction:row;justify-content:flex-start;align-items:center;gap:12px;width:100%;
   font-size:14px;padding:11px 14px;margin:0;border-top:0;border-left:4px solid transparent;border-radius:10px;cursor:pointer;text-align:left}
 html.desktop nav button svg{width:20px;height:20px}
+
+/* the arrow at the top of the sidebar folds the menu to a rail of icons (and back); the choice is remembered */
+html.desktop #nav-toggle{display:flex;justify-content:flex-end;border-left-color:transparent!important;color:var(--grey);margin-bottom:6px}
+html.desktop #nav-toggle svg{width:18px;height:18px;transition:transform .18s}
+html.desktop #nav-toggle:hover{color:var(--black)}
+html.desktop body{transition:grid-template-columns .18s}
+html.desktop.navcol body{grid-template-columns:64px minmax(0,1fr)}
+html.desktop.navcol nav{padding:16px 8px}
+html.desktop.navcol nav button{font-size:0;justify-content:center;gap:0;padding:11px 0}
+html.desktop.navcol nav button svg{width:21px;height:21px}
+html.desktop.navcol #nav-toggle{justify-content:center}
+html.desktop.navcol #nav-toggle svg{transform:rotate(180deg)}
+html.desktop.navcol #toast{left:calc(50% + 32px)}
 html.desktop nav button:hover{background:var(--lgrey)}
 html.desktop nav button.on{background:var(--po);border-left-color:var(--orange)}
 html.desktop main{grid-column:2;grid-row:2;padding:22px 28px 44px;min-width:0}
@@ -87,12 +100,17 @@ html.desktop .zone-send #d-stat{margin-top:6px}
 html.desktop .zone-send #d-stat:empty{display:none}
 html.desktop .zone-send button.b{margin-bottom:6px}
 html.desktop #d-lines .li{padding:12px}
-html.desktop #d-box-awb,html.desktop #d-box-lines,html.desktop #d-box-charges{margin-top:6px}
+html.desktop #d-box-lines,html.desktop #d-box-charges{margin-top:6px}
 @media (min-width:1360px){
   html.desktop #box-doc-form{grid-template-columns:repeat(2,minmax(0,1fr))}
-  html.desktop .zone-doc{grid-column:1;grid-row:span 2}
-  html.desktop .zone-party,html.desktop .zone-amount{grid-column:2}
+  /* left column: the document's own fields, then the shipment tracking; right column: supplier / customer, amounts */
+  html.desktop .dcol{display:flex;flex-direction:column;gap:16px;min-width:0}
+  html.desktop .dcol1{grid-column:1}
+  html.desktop .dcol2{grid-column:2}
 }
+html.desktop .zone-awb .f{margin-bottom:10px}
+html.desktop .zone-awb .hint{margin:0 0 10px}
+html.desktop .zone-awb #d-awb-hint:empty{display:none}
 @media (max-width:1100px){
   html.desktop #v-docs.on,html.desktop #v-scan.on{grid-template-columns:minmax(0,1fr)}
   html.desktop .docpane,html.desktop .scanpane{position:static}

@@ -1,4 +1,4 @@
-# IO Doc Scanner — desktop (Windows/macOS) — version 1.5.0
+# IO Doc Scanner — desktop (Windows/macOS) — version 1.6.0
 
 Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (see the root `README.md`). Business-card and accounts-document scanning both work here; the differences from the phone apps are:
 
@@ -6,9 +6,9 @@ Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (s
 - **No on-device OCR for cards.** Android/iOS run OCR natively; desktop has none, so a picked card photo is sent to Claude (the same Anthropic key configured for document field extraction, in Settings) to read its fields directly. If no key is set, or the request fails, the picture is still saved and attached — just fill in the fields by hand. Document scanning always reads a PDF's text on-device with pdf.js first and fills the form with the built-in English/Lithuanian/German reader (`docrules.js`); Claude is only asked as well when a key is set, and receives the file itself for scans and photos.
 - Everything else — Settings, ERPNext sync, Excel export, the Documents review/approve screen, duplicate-supplier detection/merge — is the same shared code, unmodified.
 
-## Wide layout and the Review box (1.5.0)
+## Wide layout, collapsible menu and the Review box (1.5.0 / 1.6.0)
 
-The shared UI adds the class `desktop` to `<html>` when the shell reports `Android.platform() === "desktop"` (see `app/preload.js`); every wide-screen rule lives in `app/web/desktop.css` (source: `android/.../assets/desktop.css`) and is scoped to `html.desktop`, so the phone apps and a browser are untouched. The window opens up to 1440 × 920 (minimum 1000 × 640). The Documents screen shows the attached document large in its own pane (`docview.js`, PDF pages drawn by pdf.js) next to the form, which has a Review box (`review.js`): one tick per key value, a status, the reviewer's name and a note, written into the ERPNext remarks and the upload history. Tests: `tests/test_review.js`, `tests/test_review_send.js`.
+The shared UI adds the class `desktop` to `<html>` when the shell reports `Android.platform() === "desktop"` (see `app/preload.js`); every wide-screen rule lives in `app/web/desktop.css` (source: `android/.../assets/desktop.css`) and is scoped to `html.desktop`, so the phone apps and a browser are untouched. The window opens up to 1440 × 920 (minimum 1000 × 640). The Documents screen shows the attached document large in its own pane (`docview.js`, PDF pages drawn by pdf.js) next to the form, which has a Review box (`review.js`): one tick per key value, a status, the reviewer's name and a note, written into the ERPNext remarks and the upload history. From 1.6.0 an arrow at the top of the left menu folds it to icons (`html.navcol`, setting `nav_collapsed`), the viewer can be dragged with the left mouse button (`docview.js`) and the tracking / AWB field has its own *Shipment tracking* box (`newui.js` moves it there on the desktop only). Tests: `tests/test_review.js`, `tests/test_review_send.js`, `tests/test_desktop_v16.js`.
 
 ## Layout
 

@@ -236,6 +236,13 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 
 /* ---------------------------------------------- document viewer and review box (phones and desktop) */
 .deskonly{display:none}
+/* the two columns of the document form are only a wrapper on the phone / in a browser; the desktop layout turns them into columns */
+.dcol{display:contents}
+#nav-toggle{display:none}
+.dvpages{user-select:none;-webkit-user-select:none}
+.dvpages.dv-pan{cursor:grab}
+.dvpages.dv-pan.dv-grab{cursor:grabbing}
+.dvpages img,.dvpages canvas{-webkit-user-drag:none;user-drag:none}
 details.viewcard{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px}
 details.viewcard>summary{font-size:11px;text-transform:uppercase;letter-spacing:.9px;color:var(--orange);font-weight:bold;cursor:pointer}
 .dvbar{display:flex;align-items:center;gap:6px;margin:10px 0 8px;flex-wrap:wrap}
@@ -658,6 +665,7 @@ details.viewcard>summary{font-size:11px;text-transform:uppercase;letter-spacing:
       <h2 class="mobonly">Recognised fields</h2>
       <div id="d-warn"></div>
 
+      <div class="dcol dcol1">
       <div class="zone zone-doc">
       <h2 class="deskonly">Document</h2>
       <div class="row">
@@ -686,6 +694,13 @@ details.viewcard>summary{font-size:11px;text-transform:uppercase;letter-spacing:
       </div>
       </div>
 
+      <div id="d-awb-zone" class="zone zone-awb" style="display:none">
+        <h2>Shipment tracking</h2>
+        <p class="hint" id="d-awb-hint"></p>
+      </div>
+      </div>
+
+      <div class="dcol dcol2">
       <div id="d-box-supplier" class="zone zone-party">
         <h2 style="margin-top:16px">Supplier</h2>
         <div class="f"><label>Supplier name <span class="mand">*</span></label><input id="d-supplier_name"></div>
@@ -714,6 +729,7 @@ details.viewcard>summary{font-size:11px;text-transform:uppercase;letter-spacing:
         <div><label>Total amount (for your reference)</label><input id="d-total_amount" inputmode="decimal"></div>
       </div>
       <p class="hint">Currency and total are shown so you can sanity-check the scan against the document — they are not written to ERPNext by this screen.</p>
+      </div>
       </div>
 
       <div id="d-new" class="zone zone-new" style="display:none">
@@ -811,11 +827,12 @@ details.viewcard>summary{font-size:11px;text-transform:uppercase;letter-spacing:
 </main>
 
 <nav>
-  <button data-v="scan" class="on"><svg viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M7 12h10"/></svg>Scan</button>
-  <button data-v="cards"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 10h5M6 14h8"/></svg>Cards</button>
-  <button data-v="docs"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg>Documents</button>
-  <button data-v="export"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>Export</button>
-  <button data-v="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.5-2.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6 2 2 0 1 1 14 4.6 1.7 1.7 0 0 0 16.9 5.8l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4Z"/></svg>Settings</button>
+  <button id="nav-toggle" type="button" title="Collapse the menu" aria-label="Collapse the menu"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <button data-v="scan" title="Scan" class="on"><svg viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M7 12h10"/></svg>Scan</button>
+  <button data-v="cards" title="Cards"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 10h5M6 14h8"/></svg>Cards</button>
+  <button data-v="docs" title="Documents"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg>Documents</button>
+  <button data-v="export" title="Export"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>Export</button>
+  <button data-v="set" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.5-2.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6 2 2 0 1 1 14 4.6 1.7 1.7 0 0 0 16.9 5.8l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4Z"/></svg>Settings</button>
 </nav>
 
 <div id="toast"></div>

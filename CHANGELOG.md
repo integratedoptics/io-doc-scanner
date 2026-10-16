@@ -15,8 +15,22 @@ Then tag the commit `vX.Y.Z`. How the apps pick the update up: `docs/MOBILE-UPDA
 
 | Version | versionCode / build |
 |---|---|
+| 1.6.0 | 7 |
 | 1.5.0 | 6 |
 | 1.4 | 5 |
+
+## 1.6.0
+
+**Desktop (Windows / macOS).**
+- *Collapsible menu.* An arrow at the top of the left menu folds it to a rail of icons (hover shows the name) and
+  opens it again; the choice is remembered (setting `nav_collapsed`).
+- *Drag the document.* When the document in the viewer is larger than its box (zoomed in, or a long PDF), hold the left
+  mouse button on it and drag to move it around; the pointer turns into a hand.
+- *Shipment tracking box.* The Tracking / AWB number — and, for a waybill, the Purchase Order finder with its text —
+  now sit in a box of their own under the Document box, in what used to be an empty grey area, instead of inside the
+  test-server box. Documents without a tracking number do not show it.
+
+The phone apps are unchanged (same layout, same place for the tracking field).
 
 ## 1.5.0
 

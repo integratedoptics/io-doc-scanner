@@ -34,9 +34,24 @@ function kind(type, attachmentKind) {
 var TITLES = { invoice: "Purchase Invoice on the test server", quotation: "Supplier Quotation on the test server",
 	waybill: "Purchase Receipt on the test server" };
 
+/* Desktop apps: the tracking / AWB field and the Purchase Order finder sit in a box of their own (Shipment tracking)
+   beside the other boxes instead of inside the test-server box. On a phone they stay where they were. */
+var awbZone = false;
+function placeAwbZone() {
+	var z = $("d-awb-zone");
+	if (!z || !document.documentElement.classList.contains("desktop") || !$("d-box-track") || !$("d-box-awb")) return;
+	z.appendChild($("d-box-track"));
+	z.appendChild($("d-box-awb"));
+	awbZone = true;
+}
+
+var AWB_HINTS = { invoice: "Written to the Purchase Invoice's tracking / AWB field, when the test server has one.",
+	waybill: "A draft Purchase Receipt is made from the Purchase Order that carries this AWB number, and the waybill is attached to it." };
+
 function update(type, attachmentKind, quiet) {
 	var k = kind(type, attachmentKind), on = enabled();
 	var box = $("d-new");
+	if (awbZone) $("d-awb-zone").style.display = "none";
 	var quotationOnly = type === "supplier_quotation";
 	box.style.display = (k && on) || quotationOnly ? "" : "none";
 	if (!(k && on) && !quotationOnly) return;
@@ -54,6 +69,12 @@ function update(type, attachmentKind, quiet) {
 	$("d-box-track").style.display = (k === "invoice" || k === "waybill") && on ? "" : "none";
 	$("d-box-valid").style.display = k === "quotation" && on ? "" : "none";
 	$("d-box-awb").style.display = k === "waybill" && on ? "" : "none";
+	if (awbZone) {
+		var showAwb = $("d-box-track").style.display !== "none" || $("d-box-awb").style.display !== "none";
+		$("d-awb-zone").style.display = showAwb ? "" : "none";
+		$("d-awb-hint").textContent = AWB_HINTS[k] || "";
+		if (k === "waybill") $("d-new-hint").textContent = "";   // its text moved into the tracking box
+	}
 	if (quiet) return;
 	if ((k === "invoice" || k === "quotation") && on) { refreshLines(false); renderCharges(); }
 	if (k === "waybill" && on) findOrders();
@@ -455,6 +476,7 @@ function testConnection(button, out) {
 
 function init() {
 	if (!$("d-lines")) return;
+	placeAwbZone();
 	wire();
 }
 

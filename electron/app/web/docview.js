@@ -110,7 +110,34 @@ function zoom(delta) {
 
 function fit() { st.zoom = 2; render(); }
 
+/* Drag the document with the left mouse button when it is larger than the viewer (zoomed in, or taller than the box).
+   A touch screen scrolls it by finger anyway. */
+function canPan(pg) { return pg.scrollWidth > pg.clientWidth + 1 || pg.scrollHeight > pg.clientHeight + 1; }
+
+function wirePan() {
+	var pg = $("dv-pages");
+	if (!pg || pg._panWired) return;
+	pg._panWired = true;
+	var drag = null;
+	pg.addEventListener("mouseenter", function () { pg.classList.toggle("dv-pan", canPan(pg)); });
+	pg.addEventListener("mousedown", function (e) {
+		if (e.button !== 0 || !canPan(pg)) return;
+		drag = { x: e.clientX, y: e.clientY, left: pg.scrollLeft, top: pg.scrollTop };
+		pg.classList.add("dv-pan", "dv-grab");
+		e.preventDefault();   // no text selection or picture drag while panning
+	});
+	window.addEventListener("mousemove", function (e) {
+		if (!drag) return;
+		pg.scrollLeft = drag.left - (e.clientX - drag.x);
+		pg.scrollTop = drag.top - (e.clientY - drag.y);
+	});
+	function stop() { if (drag) { drag = null; pg.classList.remove("dv-grab"); } }
+	window.addEventListener("mouseup", stop);
+	window.addEventListener("blur", stop);
+}
+
 function init() {
+	wirePan();
 	var a = $("dv-in"), b = $("dv-out"), c = $("dv-fit");
 	if (a) a.onclick = function () { zoom(1); };
 	if (b) b.onclick = function () { zoom(-1); };

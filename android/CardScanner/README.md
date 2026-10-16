@@ -1,4 +1,4 @@
-# Card Scanner (Android) — version 1.5.0
+# Card Scanner (Android) — version 1.6.0
 
 Offline business card scanner that exports ERPNext-ready Excel files. No server, no account, no ERPNext connection.
 

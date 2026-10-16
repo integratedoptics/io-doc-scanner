@@ -93,7 +93,9 @@ var DEFAULTS = {
 	/* phone apps: where to look for a newer version (empty = the built-in address), and the version the user dismissed */
 	update_url: "", update_dismissed: "",
 	/* the name written on a document review */
-	reviewer: ""
+	reviewer: "",
+	/* desktop apps: the left menu folded to icons */
+	nav_collapsed: false
 };
 
 var EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]{2,}/g;
@@ -1334,11 +1336,29 @@ function testErp() {
 	});
 }
 
+/* desktop apps: the arrow at the top of the left menu folds it to a rail of icons and back (remembered in the settings) */
+function applyNavCollapsed() {
+	var on = !!S.nav_collapsed;
+	document.documentElement.classList.toggle("navcol", on);
+	var b = $("nav-toggle");
+	if (b) {
+		var t = on ? "Expand the menu" : "Collapse the menu";
+		b.title = t; b.setAttribute("aria-label", t); b.setAttribute("aria-expanded", on ? "false" : "true");
+	}
+}
+function wireNavToggle() {
+	var b = $("nav-toggle");
+	if (!b) return;
+	applyNavCollapsed();
+	b.onclick = function () { S.nav_collapsed = !S.nav_collapsed; saveSettings(); applyNavCollapsed(); };
+}
+
 // ----------------------------------------------------------------------- wire
 function wire() {
-	Array.prototype.forEach.call(document.querySelectorAll("nav button"), function (b) {
+	Array.prototype.forEach.call(document.querySelectorAll("nav button[data-v]"), function (b) {
 		b.onclick = function () { show(b.dataset.v); };
 	});
+	wireNavToggle();
 
 	$("btn-cam").onclick = function () { busy($("btn-cam"), true, "Opening the camera…"); A.takePhoto(); };
 	$("btn-pick").onclick = function () { busy($("btn-pick"), true, "Opening the gallery…"); A.pickPhoto(); };
