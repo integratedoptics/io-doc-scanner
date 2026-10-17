@@ -203,9 +203,9 @@ public class MainActivity extends Activity {
         public String appVersion() {
             try {
                 String v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-                return v == null || v.isEmpty() ? "1.6.0" : v;
+                return v == null || v.isEmpty() ? "1.7.0" : v;
             } catch (Exception e) {
-                return "1.6.0";
+                return "1.7.0";
             }
         }
 

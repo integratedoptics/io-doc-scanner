@@ -95,7 +95,9 @@ var DEFAULTS = {
 	/* the name written on a document review */
 	reviewer: "",
 	/* desktop apps: the left menu folded to icons */
-	nav_collapsed: false
+	nav_collapsed: false,
+	/* desktop apps: Zoho Mail attachments — region, trusted senders (domains or addresses, one per line), days to look back */
+	zoho_region: "eu", zoho_trusted: "", zoho_days: 14
 };
 
 var EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]{2,}/g;
@@ -1474,6 +1476,8 @@ if (window.CS_DOCSCAN) window.CS_DOCSCAN.init();
 if (window.CS_REVIEW) window.CS_REVIEW.init({ settings: function () { return S; }, save: saveSettings });
 if (window.CS_UPDATES) window.CS_UPDATES.init({ settings: function () { return S; }, save: saveSettings, toast: toast,
 	grab: function () { S.update_url = $("s-upd-url").value.trim(); saveSettings(); } });
+if (window.CS_ZOHOMAIL) window.CS_ZOHOMAIL.init({ settings: function () { return S; }, save: saveSettings, toast: toast,
+	gotoSettings: function () { show("set"); } });
 paintCountryList();
 paintSettings();
 paintCount();

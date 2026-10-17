@@ -141,3 +141,6 @@ html.desktop #v-set .card{break-inside:avoid;margin-bottom:20px}
   html.desktop #v-export.on{grid-template-columns:minmax(0,1fr)}
 }
 html.desktop .zone-address button.b{width:100%;margin-right:0}
+
+/* "From email" panel (zohomail.js): compact buttons */
+html.desktop .zm-box button.b{min-width:0;margin:0;padding:6px 16px;border-radius:8px}

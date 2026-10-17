@@ -15,10 +15,12 @@
    trade-off. */
 "use strict";
 
-const { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, session, systemPreferences } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, session, systemPreferences, safeStorage } = require("electron");
 const path = require("path");
 const { URL } = require("url");
+const fs = require("fs");
 const httpClient = require("./http");
+const zohoMail = require("./zoho");
 
 const WEB_DIR = path.join(__dirname, "web");
 const WEB_ENTRY = path.join(WEB_DIR, "index.html");
@@ -138,3 +140,30 @@ ipcMain.handle("http-fetch", async (event, req) => {
 		r.ok && r.status >= 400 ? String(r.body).slice(0, 200).replace(/\s+/g, " ") : "");
 	return r;
 });
+
+/* ---------------------------------------------------------------- Zoho Mail (read-only)
+   Lists recent inbox mails with a PDF or picture attached and fetches the one the user picks. The credentials stay in
+   this process (encrypted with the system keychain when available); the page only gets lists, verdicts and one
+   data URL. See zoho.js and mailsafety.js. Every call answers {ok, ...} instead of throwing across the bridge. */
+let zohoClient = null;
+function zoho() {
+	if (!zohoClient) {
+		zohoClient = zohoMail.create({ store: zohoMail.fileStore(app.getPath("userData"), fs, path, safeStorage) });
+	}
+	return zohoClient;
+}
+function str(v, max) { return typeof v === "string" ? v.slice(0, max || 500) : ""; }
+function zohoCall(fn) {
+	return Promise.resolve().then(fn).then((r) => ({ ok: true, result: r })).catch((e) => {
+		console.log("[zoho] error:", (e && e.code) || "", (e && e.message) || String(e));
+		return { ok: false, error: (e && e.message) || String(e), code: (e && e.code) || "error" };
+	});
+}
+ipcMain.handle("zoho-status", () => zohoCall(() => Object.assign(zoho().status(), { regions: zoho().regions(), scopes: zoho().scopes() })));
+ipcMain.handle("zoho-connect", (event, p) => zohoCall(() => zoho().connect({
+	region: str(p && p.region, 10), clientId: str(p && p.clientId, 200), clientSecret: str(p && p.clientSecret, 200), code: str(p && p.code, 300) })));
+ipcMain.handle("zoho-disconnect", () => zohoCall(() => zoho().disconnect()));
+ipcMain.handle("zoho-list", (event, p) => zohoCall(() => zoho().list({ days: Number(p && p.days) || 14, trusted: str(p && p.trusted, 5000), own: [] })));
+ipcMain.handle("zoho-fetch", (event, p) => zohoCall(() => zoho().fetchAttachment({
+	folderId: str(p && p.folderId, 40), messageId: str(p && p.messageId, 40), attachmentId: str(p && p.attachmentId, 80),
+	name: str(p && p.name, 300), ack: ["check", "risky"].indexOf(p && p.ack) >= 0 ? p.ack : "", trusted: str(p && p.trusted, 5000), own: [] })));

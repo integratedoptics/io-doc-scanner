@@ -17,16 +17,16 @@ time — that is expected (see step 3).
    ```
 
 4. In `electron\dist` you now have:
-   - `IO Doc Scanner Setup 1.6.0.exe` — the installer (Start-menu entry, uninstaller). Only the **installed** app updates itself (see "Automatic updates" below).
-   - `IO Doc Scanner Setup 1.6.0.exe.blockmap` and `latest.yml` — what the update server needs (see "Automatic updates").
-   - For a portable copy without installing, build the ZIP instead: `npm run dist:win:zip` gives a `…-1.6.0-win.zip` — unzip it anywhere, open the folder and double-click `IO Doc Scanner.exe`. No installation, no admin rights. (The ZIP does not update itself.)
+   - `IO Doc Scanner Setup 1.7.0.exe` — the installer (Start-menu entry, uninstaller). Only the **installed** app updates itself (see "Automatic updates" below).
+   - `IO Doc Scanner Setup 1.7.0.exe.blockmap` and `latest.yml` — what the update server needs (see "Automatic updates").
+   - For a portable copy without installing, build the ZIP instead: `npm run dist:win:zip` gives a `…-1.7.0-win.zip` — unzip it anywhere, open the folder and double-click `IO Doc Scanner.exe`. No installation, no admin rights. (The ZIP does not update itself.)
 
    Copy whichever you prefer to the other PCs (shared drive, USB stick, e-mail to yourself …).
    Building takes a few minutes the first time because it downloads Electron.
 
 ## B. Install on each PC
 
-1. Double-click `IO Doc Scanner Setup 1.6.0.exe`.
+1. Double-click `IO Doc Scanner Setup 1.7.0.exe`.
 2. **SmartScreen warning** ("Windows protected your PC"): click **More info → Run anyway**.
    (Company-managed PCs with strict policies may need IT to allow the file.)
 3. Choose *Install for anyone using this computer* or *only for me*, pick the folder if you
@@ -51,7 +51,7 @@ To update, delete the old folder and unzip the new one; settings stay in `%APPDA
 - **Update:** the installed app updates itself (next section). To update by hand, run the newer installer; it replaces the old version and keeps the settings.
 - **Remove:** *Settings → Apps → IO Doc Scanner → Uninstall.*
 - **Where data lives:** `%APPDATA%\IO Doc Scanner\` (settings and the local card queue).
-- **Install on many PCs without clicking:** `"IO Doc Scanner Setup 1.6.0.exe" /S` (add `/allusers` or `/currentuser`
+- **Install on many PCs without clicking:** `"IO Doc Scanner Setup 1.7.0.exe" /S` (add `/allusers` or `/currentuser`
   to choose the scope).
 
 ## Automatic updates (installed app)

@@ -1,4 +1,4 @@
-# IO Doc Scanner — desktop (Windows/macOS) — version 1.6.0
+# IO Doc Scanner — desktop (Windows/macOS) — version 1.7.0
 
 Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (see the root `README.md`). Business-card and accounts-document scanning both work here; the differences from the phone apps are:
 
@@ -9,6 +9,10 @@ Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (s
 ## Wide layout, collapsible menu and the Review box (1.5.0 / 1.6.0)
 
 The shared UI adds the class `desktop` to `<html>` when the shell reports `Android.platform() === "desktop"` (see `app/preload.js`); every wide-screen rule lives in `app/web/desktop.css` (source: `android/.../assets/desktop.css`) and is scoped to `html.desktop`, so the phone apps and a browser are untouched. The window opens up to 1440 × 920 (minimum 1000 × 640). The Documents screen shows the attached document large in its own pane (`docview.js`, PDF pages drawn by pdf.js) next to the form, which has a Review box (`review.js`): one tick per key value, a status, the reviewer's name and a note, written into the ERPNext remarks and the upload history. From 1.6.0 an arrow at the top of the left menu folds it to icons (`html.navcol`, setting `nav_collapsed`), the viewer can be dragged with the left mouse button (`docview.js`) and the tracking / AWB field has its own *Shipment tracking* box (`newui.js` moves it there on the desktop only). Tests: `tests/test_review.js`, `tests/test_review_send.js`, `tests/test_desktop_v16.js`.
+
+## Zoho Mail attachments (1.7.0)
+
+`app/zoho.js` (main process) reads the user's Zoho Mail inbox through the Zoho Mail REST API with a read-only "Self Client" token and lists mails that carry PDF/picture attachments; `app/mailsafety.js` is the scam filter (file names, file contents, sender checks); `preload.js` exposes both to the page as `window.CS_ZOHO`; the panel and the Settings card are `web/zohomail.js`. Credentials never reach the page. See `docs/ZOHO-MAIL.md`. Tests: `test/mailsafety.test.js`, `test/zoho.test.js` (mock Zoho server), and `tests/test_zohomail_ui.js` in the repo root.
 
 ## Layout
 
@@ -32,7 +36,7 @@ npm start               # run it locally
 npm run dist:mac        # build a signed... well, an UNSIGNED .dmg/.zip for macOS
 npm run dist:win        # build the unsigned NSIS installer for Windows (needs Windows or Wine)
 npm run dist:win:zip    # only the Windows ZIP (unzip and run, no install; does not auto-update)
-npm test                # unit tests of the updater
+npm test                # unit tests: updater, Zoho client (mock server), scam filter
 ```
 
 Step-by-step instructions for installing on Windows PCs: [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md).

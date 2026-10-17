@@ -102,6 +102,15 @@ function processCardPhoto(buf, mime) {
 	});
 }
 
+/* Zoho Mail (read-only inbox access, in the main process — see zoho.js). Each call resolves {ok, result} or {ok:false, error}. */
+window.CS_ZOHO = {
+	status: function () { return ipcRenderer.invoke("zoho-status"); },
+	connect: function (p) { return ipcRenderer.invoke("zoho-connect", p); },
+	disconnect: function () { return ipcRenderer.invoke("zoho-disconnect"); },
+	list: function (p) { return ipcRenderer.invoke("zoho-list", p); },
+	fetch: function (p) { return ipcRenderer.invoke("zoho-fetch", p); }
+};
+
 /* macOS asks for camera permission per app; ask explicitly so the prompt always appears. */
 window.CS_CAMERA_BEFORE = function () { return ipcRenderer.invoke("camera-access"); };
 

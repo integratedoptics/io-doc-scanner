@@ -15,9 +15,28 @@ Then tag the commit `vX.Y.Z`. How the apps pick the update up: `docs/MOBILE-UPDA
 
 | Version | versionCode / build |
 |---|---|
+| 1.7.0 | 8 |
 | 1.6.0 | 7 |
 | 1.5.0 | 6 |
 | 1.4 | 5 |
+
+## 1.7.0
+
+**Desktop (Windows / macOS) — documents from Zoho Mail.**
+- *From email.* A new button under *Choose a PDF or picture* on the Documents screen opens a list of the recent inbox
+  mails (3 / 7 / 14 / 30 days) that carry a PDF or picture. Pick an attachment and it opens in the normal Documents
+  form and viewer, exactly as a file chosen from disk. Read-only: the app can list and open attachments, never send,
+  move or delete mail. Set-up (Zoho "Self Client", one time) is in `docs/ZOHO-MAIL.md` and in Settings → *Zoho Mail*.
+- *Scam filter.* Only PDF, JPG and PNG attachments are listed; programs, scripts, archives, macro files and disguised
+  names (`invoice.pdf.exe`, hidden or right-to-left characters) are hidden and counted. The file's real content must
+  match its name, and a PDF is scanned for programs it would launch. Each mail gets a verdict — *Trusted sender*
+  (on your trusted list AND passed the mail server's SPF / DKIM / DMARC checks): one click; *Check the sender*
+  (unknown, nothing wrong found): a confirm click; *Risky* (failed sender checks, look-alike domain, different
+  Reply-To, display-name trick, your own domain unverified): the reasons are shown and a tick box is required.
+  The decisions are taken again in the main process when the file is downloaded — the page cannot skip them.
+- The Zoho credentials stay in the main process (encrypted with the system keychain when available).
+
+The phone apps are unchanged.
 
 ## 1.6.0
 
