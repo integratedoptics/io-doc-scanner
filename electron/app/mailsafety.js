@@ -347,7 +347,10 @@ function analyseSender(input) {
 	}
 
 	if (fromOwn && av !== "pass") {
-		add("bad", "own-domain-unverified", "The mail claims to come from your own domain (" + from.domain + ") but is not verified — internal-looking forgeries are a common trick.");
+		const seen = auth.found ? "SPF " + (auth.spf || "-") + ", DKIM " + (auth.dkim || "-") + ", DMARC " + (auth.dmarc || "-")
+			: "no SPF/DKIM/DMARC result in the mail's headers";
+		add("bad", "own-domain-unverified", "The mail claims to come from your own domain (" + from.domain + ") but is not verified (" + seen +
+			") — internal-looking forgeries are a common trick. Mail really sent from your own systems should pass; if it does not, fix SPF/DKIM/DMARC for that sender (docs/ZOHO-MAIL.md).");
 	}
 
 	const lookup = [];

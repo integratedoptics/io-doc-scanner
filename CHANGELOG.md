@@ -15,11 +15,24 @@ Then tag the commit `vX.Y.Z`. How the apps pick the update up: `docs/MOBILE-UPDA
 
 | Version | versionCode / build |
 |---|---|
+| 1.7.2 | 10 |
 | 1.7.1 | 9 |
 | 1.7.0 | 8 |
 | 1.6.0 | 7 |
 | 1.5.0 | 6 |
 | 1.4 | 5 |
+
+## 1.7.2
+
+**All four apps — Supplier Quotation filing (test server).**
+- Quotations are filed under the **SQTN-** naming series instead of the server's default (RFQ-). If the server has no
+  such series the default is used and the result says so.
+- The validity date goes into the **valid_till** field. The server's field list is now read afresh for every quotation, so
+  a field or series created on the server is used straight away, without restarting the app.
+
+**Desktop — Zoho Mail.** The "mail claims to come from your own domain but is not verified" warning now shows what the
+mail server actually recorded (SPF / DKIM / DMARC, or that nothing was found), and `docs/ZOHO-MAIL.md` explains how to make
+your own mail verify (SPF, DKIM, DMARC with a reject policy in the Zoho Admin Console and DNS).
 
 ## 1.7.1
 

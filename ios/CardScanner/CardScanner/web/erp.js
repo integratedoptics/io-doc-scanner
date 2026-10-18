@@ -481,6 +481,8 @@ function createDoc(doctype, doc, notes) {
    user; when it is refused the checks simply fall back to the handful of Link
    fields that are known to exist in a stock ERPNext. */
 var meta = {};
+/* forget what was read about a doctype (or all), so fields added on the server meanwhile are seen without restarting the app */
+function forgetMeta(doctype) { if (doctype) delete meta[doctype]; else meta = {}; }
 
 function describe(doctype) {
 	if (meta[doctype] !== undefined) return Promise.resolve(meta[doctype]);
@@ -1259,7 +1261,7 @@ return {
 	shared: {
 		getList: getList, createDoc: createDoc, updateDoc: updateDoc,
 		fetchDoc: fetchDoc, apiUrl: apiUrl, methodUrl: methodUrl, request: request,
-		authHeaders: authHeaders, describe: describe, clean: clean,
+		authHeaders: authHeaders, describe: describe, forgetMeta: forgetMeta, clean: clean,
 		ensureLink: ensureLink, attachFile: attachFile, toErrors: toErrors,
 		login: login, ready: ready, callMethod: callMethod
 	},

@@ -126,6 +126,14 @@ test("sender: own domain must verify", () => {
 	assert.notEqual(s.analyseSender(Object.assign({ from: "ceo@integratedoptics.com", headers: PASS }, t)).level, "risky");
 });
 
+test("sender: the own-domain warning says what was read", () => {
+	const t = { trusted: "", own: ["integratedoptics.com"] };
+	const none = s.analyseSender(Object.assign({ from: "ceo@integratedoptics.com", headers: {} }, t)).reasons.find((r) => r.code === "own-domain-unverified");
+	assert.match(none.text, /no SPF\/DKIM\/DMARC result/);
+	const fail = s.analyseSender(Object.assign({ from: "ceo@integratedoptics.com", headers: FAIL }, t)).reasons.find((r) => r.code === "own-domain-unverified");
+	assert.match(fail.text, /SPF \S+, DKIM \S+, DMARC \S+/);
+});
+
 test("sender: display-name trick, Reply-To redirect, free webmail, bank-change wording", () => {
 	const spoof = s.analyseSender({ from: "\"billing@acme.com\" <x@gmail.com>", headers: PASS });
 	assert.equal(spoof.level, "risky");

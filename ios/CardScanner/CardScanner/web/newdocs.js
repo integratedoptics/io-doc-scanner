@@ -657,6 +657,35 @@ function createPurchaseInvoice(fields, lines, file, charges) {
 
 /* ------------------------------------------------ Supplier Quotation */
 
+/* The Supplier Quotation's naming series ("SQTN-", not the server's first/default one) and its validity field ("valid_till").
+   The server's field list is read afresh each time, so a field or series added meanwhile is used at once.
+   Resolves { series, validField, notes: [message] }. */
+var QUOTATION_SERIES = "SQTN-";
+function quotationSetup() {
+	if (T().forgetMeta) T().forgetMeta("Supplier Quotation");
+	Object.keys(fieldCache).forEach(function (k) { if (k.indexOf("Supplier Quotation\u0000") === 0) delete fieldCache[k]; });
+	return T().describe("Supplier Quotation").then(function (m) {
+		var out = { series: "", validField: "valid_till", notes: [] };
+		if (!m || !m.fields) { out.series = QUOTATION_SERIES; return out; }   /* field list unreadable: send the wanted series as is */
+		var f = m.fields;
+		var vf = ["valid_till", "valid_upto", "valid_until"].filter(function (n) { return f[n]; })[0];
+		if (vf) out.validField = vf;
+		else if (m.complete) {
+			out.validField = "";
+			out.notes.push("This server's Supplier Quotation has no valid_till field, so the validity date was not saved.");
+		}
+		var ns = f.naming_series;
+		if (!ns) { out.series = m.complete ? "" : QUOTATION_SERIES; return out; }
+		var opts = String(ns.options || "").split("\n").map(function (o) { return o.trim(); }).filter(Boolean);
+		if (!opts.length) { out.series = QUOTATION_SERIES; return out; }
+		var pick = opts.filter(function (o) { return o === QUOTATION_SERIES; })[0] ||
+			opts.filter(function (o) { return /SQTN/i.test(o); })[0] || "";
+		out.series = pick;
+		if (!pick) out.notes.push("This server has no \u201cSQTN-\u201d naming series for Supplier Quotations (it offers " + opts.join(", ") + "), so its default was used.");
+		return out;
+	});
+}
+
 /* fields: { documentNo (the supplier's quotation number), documentDate, supplierName, supplierCode, currency, validUntil }.
    Several lines of the same item (quantity price breaks) become several rows, each with its quantity and price. */
 function createSupplierQuotation(fields, lines, file, charges) {
@@ -664,13 +693,17 @@ function createSupplierQuotation(fields, lines, file, charges) {
 	var bad = checkLines(lines);
 	if (bad) return Promise.reject(new Error(bad));
 	var c = cfg();
-	var supplier, made;
+	var supplier, made, setup;
 	return resolveSupplier(fields.supplierName, fields.supplierCode, fields.supplierLink).then(function (s) {
 		if (!s.name) {
 			throw new Error("The test server has no Supplier like “" + fields.supplierName + "”. Add it there first " +
 				(s.candidates.length ? "(closest: " + s.candidates[0].name + " — " + s.candidates[0].score + " %)." : "."));
 		}
 		supplier = s.name;
+		return quotationSetup();
+	}).then(function (su) {
+		setup = su;
+		su.notes.forEach(function (m) { notes.push({ field: "", message: m }); });
 		return ensureItems(lines, notes);
 	}).then(function (m) {
 		made = m;
@@ -682,17 +715,18 @@ function createSupplierQuotation(fields, lines, file, charges) {
 			fields.reviewNote ? resolveField("Supplier Quotation", ["remarks", "comment"], "") : Promise.resolve("")]).then(function (rt) {
 			var rate = rt[0], taxes = rt[1];
 			var doc = {
+				naming_series: setup.series || undefined,
 				supplier: supplier,
 				transaction_date: date,
 				quotation_no: fields.documentNo || undefined,
 				currency: fields.currency || undefined,
 				conversion_rate: rate || undefined,
 				company: ci.name || undefined,
-				valid_till: fields.validUntil || undefined,
 				taxes_and_charges: taxes.length ? undefined : (c.taxes || undefined),
 				taxes: taxes.length ? taxes : undefined,
 				items: itemRows(lines, function (row, l) { if (l.code) row.supplier_part_no = l.code; })
 			};
+			if (fields.validUntil && setup.validField) doc[setup.validField] = fields.validUntil;
 			if (fields.reviewNote) {
 				if (rt[2]) doc[rt[2]] = fields.reviewNote;
 				else notes.push({ field: "", message: "The Supplier Quotation has no remarks field on this server, so the review note was not saved with it (it is in the upload history)." });

@@ -8,8 +8,8 @@ android {
         applicationId "lt.elmo.cardscanner"
         minSdk 24
         targetSdk 34
-        versionCode 9
-        versionName "1.7.1"
+        versionCode 10
+        versionName "1.7.2"
         resConfigs "en"
         ndk {
             // Samsung phones are ARM; dropping the x86 emulator libraries

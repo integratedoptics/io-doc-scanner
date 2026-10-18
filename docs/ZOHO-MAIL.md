@@ -50,6 +50,35 @@ trusted supplier is still red.
 
 After the file is opened, nothing happens in ERPNext until you review the document and press Send, as for any document.
 
+## "The mail claims to come from your own domain but is not verified"
+
+This red warning means the Zoho server that received the mail did **not** record a passing SPF, DKIM or DMARC result for a
+message that shows your own domain as the sender. The warning now says what was read ("SPF pass, DKIM none…" or "no result in
+the headers"). There are two quite different causes:
+
+- **A real forgery** — someone else's server sends as `…@integratedoptics.com`. Results show `fail`.
+- **Your own legitimate mail that does not authenticate** — ERPNext's outgoing mail, a NAS or printer, a web form, a CRM or
+  newsletter service, or a mail relayed without a DKIM signature. Results show `none`/`neutral` or nothing.
+
+The risk can be reduced to almost nothing by making **every legitimate sender authenticate** and then telling the world to
+**reject everything else**. One-time work in the Zoho Mail Admin Console and your DNS:
+
+1. **SPF** — one TXT record on the domain, for Zoho EU: `v=spf1 include:zoho.eu ~all`. Add an `include:` for every other
+   service that sends as your domain (never publish two SPF records).
+2. **DKIM** — Admin Console → **Domains** → your domain → **Email Configuration** → **DKIM**: add a selector, publish the TXT
+   record it shows, press **Verify**, and make it the default signing key.
+3. **Other senders** — each service that sends as `@integratedoptics.com` must either send **through Zoho's SMTP** with a
+   mailbox login (simplest; ERPNext's Email Account can do this) or have its own DKIM key / SPF entry. Otherwise it fails DMARC.
+4. **DMARC** — Admin Console → **Domains** → **Email Configuration** → **DMARC**. Go in steps, reading the report mails that
+   arrive at the address you enter: first `p=none` (monitor only, 2–4 weeks; every legitimate sender that fails is listed),
+   then `p=quarantine`, then `p=reject`. Use only one `_dmarc` record. With `p=reject`, mail that pretends to be your domain
+   and fails is not delivered at all, so it never reaches the app.
+
+Afterwards a legitimate mail from your own domain shows `DMARC pass` and no warning, and a forged one is either rejected by
+Zoho or still flagged red here. What this **cannot** remove: a mailbox of yours or a colleague's that has really been hacked
+(it passes every check), and mail from look-alike domains (`integrated-optics.com`), which the app flags separately. Keep
+confirming bank-detail changes by phone.
+
 ## Safeguards that do not depend on the screen
 
 The decisions are taken in the app's main process, again, when the file is downloaded: the sender is re-judged from the

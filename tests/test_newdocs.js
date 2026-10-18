@@ -15,6 +15,7 @@ var pos = { "PO-08353": { name: "PO-08353", docstatus: 1, supplier: "Nano Vita L
 	{ name: "poi-2", item_code: "LASER-100K", qty: 2, received_qty: 0, rate: 900, uom: "Nos" }] } };
 var poRows = [{ name: "PO-08353", supplier: "Nano Vita Ltd", transaction_date: "2026-09-01", status: "To Receive and Bill", per_received: 10, docstatus: 1, tracking_awb_no: "1234 5678 90" }];
 var describeNone = false;
+var sqSeries = "PUR-SQTN-.YYYY.-\nRFQ-\nSQTN-", sqValidField = "valid_till", forgot = [];
 var fake = {
 	getList: function (dt, filters, fields) {
 		calls.push(["getList", dt]);
@@ -36,8 +37,13 @@ var fake = {
 		var f = {};
 		if (dt === "Purchase Invoice") { f.scanned_invoice = {}; f.tracking_awb_number = {}; f.bill_no = {}; }
 		if (dt === "Purchase Order" || dt === "Purchase Receipt") { f.tracking_awb_no = {}; }
+		if (dt === "Supplier Quotation") {
+			if (sqValidField) f[sqValidField] = { type: "Date" };
+			f.naming_series = { type: "Select", options: sqSeries };
+		}
 		return Promise.resolve({ fields: f, complete: true });
 	},
+	forgetMeta: function (dt) { forgot.push(dt); },
 	clean: function (dt, doc, notes) { return Promise.resolve({ doc: doc, notes: notes }); },
 	createDoc: function (dt, doc) {
 		created.push({ dt: dt, doc: JSON.parse(JSON.stringify(doc)) });
@@ -144,6 +150,25 @@ var D = "data:application/pdf;base64,QUJD";
 	var sq = created.slice(before).filter(function (c) { return c.dt === "Supplier Quotation"; })[0];
 	check("quotation: three rows of the same item, each with its quantity and price", sq && sq.doc.items.length === 3 && sq.doc.items.map(function (i) { return i.item_code + "x" + i.qty + "@" + i.rate; }).join() === "ABC-12345x1@1,ABC-12345x100@0.8,ABC-12345x1000@0.6", sq && JSON.stringify(sq.doc.items));
 	check("quotation: number, date, validity, supplier part no", sq.doc.quotation_no === "Q-55" && sq.doc.transaction_date === "2026-10-01" && sq.doc.valid_till === "2026-12-31" && sq.doc.items[0].supplier_part_no === "ABC-12345");
+	check("quotation: filed under the SQTN- series, not the server default", sq.doc.naming_series === "SQTN-", JSON.stringify(sq.doc));
+	check("quotation: the server's field list is read afresh", forgot.indexOf("Supplier Quotation") >= 0);
+	var qArgs = { documentNo: "Q-56", documentDate: "2026-10-01", supplierName: "Nano Vita Ltd", currency: "EUR", validUntil: "2026-12-31" };
+	function lastSq(b4) { return created.slice(b4).filter(function (c) { return c.dt === "Supplier Quotation"; })[0]; }
+	var b4 = created.length;
+	sqSeries = "PUR-SQTN-.YYYY.-\nRFQ-";
+	var qr2 = await N.createSupplierQuotation(qArgs, q, null);
+	check("quotation: only a PUR-SQTN- style series offered -> that one is used", lastSq(b4).doc.naming_series === "PUR-SQTN-.YYYY.-", JSON.stringify(lastSq(b4).doc));
+	b4 = created.length; sqSeries = "RFQ-\nOTHER-";
+	qr2 = await N.createSupplierQuotation(qArgs, q, null);
+	check("quotation: no SQTN series on the server -> default, with a note", !lastSq(b4).doc.naming_series && qr2.notes.some(function (n) { return /SQTN/.test(n.message); }), JSON.stringify(qr2.notes));
+	b4 = created.length; sqSeries = "RFQ-\nSQTN-"; sqValidField = "";
+	qr2 = await N.createSupplierQuotation(qArgs, q, null);
+	check("quotation: no valid_till field -> not sent, with a note", !lastSq(b4).doc.valid_till && qr2.notes.some(function (n) { return /valid_till/.test(n.message); }), JSON.stringify(qr2.notes));
+	sqValidField = "valid_till";
+	b4 = created.length; describeNone = true;
+	qr2 = await N.createSupplierQuotation(qArgs, q, null);
+	describeNone = false;
+	check("quotation: field list unreadable -> SQTN- and valid_till are still sent", lastSq(b4).doc.naming_series === "SQTN-" && lastSq(b4).doc.valid_till === "2026-12-31", JSON.stringify(lastSq(b4).doc));
 	check("quotation: file attached as a normal attachment", attached[attached.length - 1].dt === "Supplier Quotation" && qr.file.state === "created");
 
 	/* waybill */
