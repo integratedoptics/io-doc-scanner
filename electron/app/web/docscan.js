@@ -190,12 +190,16 @@ function checkSupplier() {
 					'<span class="hint" style="margin:0">' + esc(m.supplier.supplier_name) +
 					(m.codeMatch ? " (same registration/tax ID)" : " — " + Math.round(m.score * 100) + "% match") +
 					"</span>" +
-					'<button class="b sec" style="margin:0" data-use="' + esc(m.supplier.name) + '">Use this</button>' +
+					'<button class="b sec" style="margin:0" data-use="' + esc(m.supplier.name) + '" data-sname="' +
+						esc(m.supplier.supplier_name || m.supplier.name) + '">Use this</button>' +
 					"</div>";
 			});
 			$("d-dupe-box").innerHTML = html;
 			Array.prototype.forEach.call($("d-dupe-box").querySelectorAll("[data-use]"), function (btn) {
 				btn.onclick = function () {
+					/* the chosen supplier replaces the name read off the document, so every later step —
+					   the live record, the test server, the comment — uses the name ERPNext knows */
+					$("d-supplier_name").value = btn.dataset.sname || btn.dataset.use;
 					state.supplierLink = btn.dataset.use;
 					$("d-dupe-box").innerHTML = '<p class="hint" style="color:#1f8a4c">Linked to existing supplier ' +
 						esc(btn.dataset.use) + ".</p>";

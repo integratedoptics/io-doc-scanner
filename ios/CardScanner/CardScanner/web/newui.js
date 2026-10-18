@@ -375,7 +375,7 @@ function fieldsOf(f) {
 	var tot = $("d-total_amount").value.trim();
 	return {
 		documentNo: f.documentNo, documentDate: f.documentDate, paymentDueDate: f.paymentDueDate,
-		supplierName: f.supplierName, supplierCode: f.supplierCode,
+		supplierName: f.supplierName, supplierCode: f.supplierCode, supplierLink: f.supplierLink || "",
 		currency: $("d-currency").value.trim().toUpperCase(),
 		totalAmount: tot === "" ? null : N()._internals.num(tot),
 		trackingNumber: $("d-tracking_number").value.trim(),

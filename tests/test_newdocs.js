@@ -110,6 +110,20 @@ var D = "data:application/pdf;base64,QUJD";
 	try { await N.createPurchaseInvoice({ documentNo: "X", documentDate: "2026-10-09", supplierName: "Nobody GmbH" }, lines, null); } catch (e) { e1 = e; }
 	check("unknown supplier: a clear error, nothing created", e1 && /no Supplier like/.test(e1.message) && created.filter(function (c) { return c.dt === "Purchase Invoice"; }).length === 1, e1 && e1.message);
 
+	/* a supplier picked with "Use this" is honoured even when the printed name is quite different */
+	suppliers.push({ name: "Wavespectrum Laser (Photonics) Group Limited", supplier_name: "Wavespectrum Laser (Photonics) Group Limited", reg_number: "", tax_id: "" });
+	var rs = await N.resolveSupplier("WAVESPECTRUM PHOTONICS GROUP LIMITED", "");
+	check("similar but not confident: not guessed, the closest is offered", !rs.name && rs.candidates.length && /Wavespectrum Laser/.test(rs.candidates[0].name), JSON.stringify(rs));
+	rs = await N.resolveSupplier("WAVESPECTRUM PHOTONICS GROUP LIMITED", "", "Wavespectrum Laser (Photonics) Group Limited");
+	check("the chosen supplier (supplierLink) is used", rs.name === "Wavespectrum Laser (Photonics) Group Limited" && rs.how === "chosen by you", JSON.stringify(rs));
+	rs = await N.resolveSupplier("Wavespectrum Laser (Photonics) Group Limited", "");
+	check("the chosen name typed into the field resolves as the same name", rs.name === "Wavespectrum Laser (Photonics) Group Limited" && rs.how === "same name", JSON.stringify(rs));
+	var q0 = created.length;
+	await N.createSupplierQuotation({ documentNo: "Q-77", documentDate: "2026-10-01", supplierName: "WAVESPECTRUM PHOTONICS GROUP LIMITED", supplierLink: "Wavespectrum Laser (Photonics) Group Limited", currency: "EUR" }, lines.slice(0, 1), null);
+	var wq = created.slice(q0).filter(function (c) { return c.dt === "Supplier Quotation"; })[0];
+	check("quotation for a chosen supplier is created for it", wq && wq.doc.supplier === "Wavespectrum Laser (Photonics) Group Limited", JSON.stringify(wq));
+	suppliers.pop();
+
 	/* no item group */
 	S.new_item_group = "";
 	var more = [N.normalizeLine({ item_code: "ZZZ-1", quantity: 1, unit_price: 1 })]; await N.matchLines(more);

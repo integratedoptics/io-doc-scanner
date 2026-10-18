@@ -60,6 +60,21 @@ function page(opts) {
 	check("no key: the AI was not called", p.calls.text.length === 0 && p.calls.file.length === 0);
 	check("no key: language shown", /Lithuanian/.test(p.d.getElementById("d-notes").textContent));
 
+	/* 1b. "Use this" on a possible duplicate supplier replaces the name in the field and links it */
+	var seen = [];
+	p = page({ acc: { findSupplierMatches: function () { return Promise.resolve([{ score: 0.9, codeMatch: false, supplier: { name: "Wavespectrum Laser (Photonics) Group Limited", supplier_name: "Wavespectrum Laser (Photonics) Group Limited" } }]); },
+		confidentSupplier: function () { return null; } } });
+	p.w.onDocPicked({ ok: true, name: "q.pdf", dataUrl: PDF });
+	await settle();
+	p.d.getElementById("d-supplier_name").value = "WAVESPECTRUM PHOTONICS GROUP LIMITED";
+	p.d.getElementById("d-supplier_name").dispatchEvent(new p.w.Event("blur"));
+	await settle();
+	var useBtn = p.d.querySelector("#d-dupe-box [data-use]");
+	check("duplicate check: offers the similar supplier", !!useBtn && /90% match/.test(p.d.getElementById("d-dupe-box").textContent));
+	if (useBtn) useBtn.click();
+	check("'Use this' replaces the supplier name in the field", p.v("d-supplier_name") === "Wavespectrum Laser (Photonics) Group Limited", p.v("d-supplier_name"));
+	check("'Use this' confirms the link", /Linked to existing supplier/.test(p.d.getElementById("d-dupe-box").textContent));
+
 	/* 2. key: the AI names OUR company as supplier (the classic mistake) -> the seller is kept */
 	p = page({ key: "k", ai: function () { return Promise.resolve({ fields: { doc_type: "purchase_invoice", document_no: "E202604-122",
 		document_date: "2026-04-22", supplier_name: "Integrated Optics UAB", supplier_reg_number: "302833442",

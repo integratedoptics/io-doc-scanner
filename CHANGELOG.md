@@ -15,10 +15,21 @@ Then tag the commit `vX.Y.Z`. How the apps pick the update up: `docs/MOBILE-UPDA
 
 | Version | versionCode / build |
 |---|---|
+| 1.7.1 | 9 |
 | 1.7.0 | 8 |
 | 1.6.0 | 7 |
 | 1.5.0 | 6 |
 | 1.4 | 5 |
+
+## 1.7.1
+
+**All four apps — fix: "Use this" on a possible existing supplier.**
+On the Documents screen, pressing **Use this** next to a suggested existing supplier (for example *Wavespectrum Laser
+(Photonics) Group Limited — 90 % match*) now puts that supplier's name into the Supplier field. Before, it only remembered
+the choice internally: the field kept the printed name, and sending to the test server failed with *"The test server has no
+Supplier like …"* because that step looked the supplier up by the printed name and ignored the choice. The test-server
+send (supplier quotations and invoices) now also uses the chosen supplier directly. No settings change; nothing else differs
+from 1.7.0.
 
 ## 1.7.0
 

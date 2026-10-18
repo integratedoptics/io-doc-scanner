@@ -1,4 +1,4 @@
-# IO Doc Scanner — desktop (Windows/macOS) — version 1.7.0
+# IO Doc Scanner — desktop (Windows/macOS) — version 1.7.1
 
 Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (see the root `README.md`). Business-card and accounts-document scanning both work here; the differences from the phone apps are:
 

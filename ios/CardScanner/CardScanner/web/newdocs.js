@@ -298,14 +298,24 @@ function resolveField(doctype, prefixes, guess) {
 
 /* The Supplier on the test server: exact name, the same registration / tax ID, or the same name apart from case,
    punctuation and legal form. Resolves { name, how, candidates }. */
-function resolveSupplier(name, code) {
+function resolveSupplier(name, code, link) {
 	name = String(name || "").trim();
+	link = String(link || "").trim();
 	if (!name) return Promise.resolve({ name: "", how: "", candidates: [] });
 	var ACC = window.CS_ACC;
 	return T().getList("Supplier", null, ["name", "supplier_name", "reg_number", "tax_id"], 0).catch(function () {
 		return T().getList("Supplier", null, ["name", "supplier_name"], 0);
 	}).then(function (rows) {
 		var lower = name.toLowerCase();
+		/* the Supplier the employee picked with "Use this" (it exists on the live server; take it if the test server has it too) */
+		if (link) {
+			var ll = link.toLowerCase();
+			for (var j = 0; j < rows.length; j++) {
+				if (String(rows[j].name).toLowerCase() === ll || String(rows[j].supplier_name || "").toLowerCase() === ll) {
+					return { name: rows[j].name, how: "chosen by you", candidates: [] };
+				}
+			}
+		}
 		for (var i = 0; i < rows.length; i++) {
 			if (String(rows[i].supplier_name || "").toLowerCase() === lower || String(rows[i].name).toLowerCase() === lower) {
 				return { name: rows[i].name, how: "same name", candidates: [] };
@@ -579,7 +589,7 @@ function createPurchaseInvoice(fields, lines, file, charges) {
 	if (bad) return Promise.reject(new Error(bad));
 	var c = cfg();
 	var supplier, made, comp;
-	return resolveSupplier(fields.supplierName, fields.supplierCode).then(function (s) {
+	return resolveSupplier(fields.supplierName, fields.supplierCode, fields.supplierLink).then(function (s) {
 		if (!s.name) {
 			throw new Error("The test server has no Supplier like “" + fields.supplierName + "”. Add it there first " +
 				(s.candidates.length ? "(closest: " + s.candidates[0].name + " — " + s.candidates[0].score + " %)." : "."));
@@ -655,7 +665,7 @@ function createSupplierQuotation(fields, lines, file, charges) {
 	if (bad) return Promise.reject(new Error(bad));
 	var c = cfg();
 	var supplier, made;
-	return resolveSupplier(fields.supplierName, fields.supplierCode).then(function (s) {
+	return resolveSupplier(fields.supplierName, fields.supplierCode, fields.supplierLink).then(function (s) {
 		if (!s.name) {
 			throw new Error("The test server has no Supplier like “" + fields.supplierName + "”. Add it there first " +
 				(s.candidates.length ? "(closest: " + s.candidates[0].name + " — " + s.candidates[0].score + " %)." : "."));

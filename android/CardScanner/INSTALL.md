@@ -1,8 +1,8 @@
 # Card Scanner — installing on your Samsung phone
 
-Version 1.7.0 · `CardScanner-1.7.0.apk`
+Version 1.7.1 · `CardScanner-1.7.1.apk`
 
-**File:** `CardScanner-1.7.0.apk` (22 MB, signed, arm64 + armeabi-v7a, Android 7.0 or newer)
+**File:** `CardScanner-1.7.1.apk` (22 MB, signed, arm64 + armeabi-v7a, Android 7.0 or newer)
 
 The app is not on Google Play, so it is installed as a "sideload". This takes about a minute.
 
@@ -17,7 +17,7 @@ Any of these works:
 ## 2. Open it
 
 1. Open **My Files** (Samsung's file manager) → **Internal storage** → **Download** (or wherever you saved it).
-2. Tap **CardScanner-1.7.0.apk**.
+2. Tap **CardScanner-1.7.1.apk**.
 
 ## 3. Allow installation from that app
 
@@ -178,9 +178,9 @@ Notes:
 
 Installing a newer APK signed with the same key updates the app in place and keeps your saved cards. Uninstalling deletes the stored cards and card photos, but not the exported Excel files in Documents.
 
-## Updating from 1.3, 1.4, 1.5.0 or 1.6.0 to 1.7.0
+## Updating from 1.3, 1.4, 1.5.0, 1.6.0 or 1.7.0 to 1.7.1
 
-Install `CardScanner-1.7.0.apk` over the top. Same signing key, so it is an update
+Install `CardScanner-1.7.1.apk` over the top. Same signing key, so it is an update
 and **your saved cards and settings are kept**. A new **Documents** tab appears
 between Cards and Export for scanning invoices and customs paperwork into the
 ERPNext *Accounts Document* doctype. Choose a PDF or a picture, or tap *Take a photo*. Invoices and customs
