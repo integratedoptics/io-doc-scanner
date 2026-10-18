@@ -1,6 +1,6 @@
 # Card Scanner for iPhone — building and installing
 
-Version 1.7.2
+Version 1.8.0
 
 This folder is a complete, ready-to-open Xcode project. It shares the exact same
 web UI as the Android app, so both phones behave identically; only the camera,
@@ -124,7 +124,7 @@ AI field extraction, duplicate-supplier merge and parent-document suggestion). N
 (`UIDocumentPickerViewController`, PDF/JPEG/PNG from Files) and `captureDocument` (camera) in
 `ScannerViewController.swift`, both answering `window.onDocPicked`. Not compiled in the sandbox it was written in —
 build once in Xcode and try both buttons on a device. `MARKETING_VERSION`
-is 1.7.2 and `CURRENT_PROJECT_VERSION` is 10.
+is 1.8.0 and `CURRENT_PROJECT_VERSION` is 11.
 
 ## New in 1.3
 

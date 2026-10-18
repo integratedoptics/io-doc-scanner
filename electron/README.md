@@ -1,4 +1,4 @@
-# IO Doc Scanner — desktop (Windows/macOS) — version 1.7.2
+# IO Doc Scanner — desktop (Windows/macOS) — version 1.8.0
 
 Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (see the root `README.md`). Business-card and accounts-document scanning both work here; the differences from the phone apps are:
 
@@ -9,6 +9,10 @@ Electron shell wrapping the same shared `web/` UI as the Android and iOS apps (s
 ## Wide layout, collapsible menu and the Review box (1.5.0 / 1.6.0)
 
 The shared UI adds the class `desktop` to `<html>` when the shell reports `Android.platform() === "desktop"` (see `app/preload.js`); every wide-screen rule lives in `app/web/desktop.css` (source: `android/.../assets/desktop.css`) and is scoped to `html.desktop`, so the phone apps and a browser are untouched. The window opens up to 1440 × 920 (minimum 1000 × 640). The Documents screen shows the attached document large in its own pane (`docview.js`, PDF pages drawn by pdf.js) next to the form, which has a Review box (`review.js`): one tick per key value, a status, the reviewer's name and a note, written into the ERPNext remarks and the upload history. From 1.6.0 an arrow at the top of the left menu folds it to icons (`html.navcol`, setting `nav_collapsed`), the viewer can be dragged with the left mouse button (`docview.js`) and the tracking / AWB field has its own *Shipment tracking* box (`newui.js` moves it there on the desktop only). Tests: `tests/test_review.js`, `tests/test_review_send.js`, `tests/test_desktop_v16.js`.
+
+## Sales invoices to XRechnung (1.8.0)
+
+The Export screen has a card that turns ERPNext Sales Invoices of the series IOG into XRechnung 3.0 (UBL) files for German authorities. It is shared web code (`web/xrechnung.js`, the same on all four apps) and runs entirely in the page against the ERPNext settings; the file goes through the normal `saveToDocuments` bridge. See `docs/XRECHNUNG.md`. Tests: `tests/test_xrechnung.js` (with an optional offline validator) and `tests/test_xrechnung_ui.js`.
 
 ## Zoho Mail attachments (1.7.0)
 

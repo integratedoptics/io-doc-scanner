@@ -97,7 +97,9 @@ var DEFAULTS = {
 	/* desktop apps: the left menu folded to icons */
 	nav_collapsed: false,
 	/* desktop apps: Zoho Mail attachments — region, trusted senders (domains or addresses, one per line), days to look back */
-	zoho_region: "eu", zoho_trusted: "", zoho_days: 14
+	zoho_region: "eu", zoho_trusted: "", zoho_days: 14,
+	/* Export -> Sales invoices to XRechnung: the invoice series offered, the seller contact XRechnung demands, what was exported */
+	xr_series: "IOG", xr_contact_name: "", xr_contact_phone: "", xr_contact_email: "", xr_done: {}
 };
 
 var EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]{2,}/g;
@@ -1478,6 +1480,9 @@ if (window.CS_UPDATES) window.CS_UPDATES.init({ settings: function () { return S
 	grab: function () { S.update_url = $("s-upd-url").value.trim(); saveSettings(); } });
 if (window.CS_ZOHOMAIL) window.CS_ZOHOMAIL.init({ settings: function () { return S; }, save: saveSettings, toast: toast,
 	gotoSettings: function () { show("set"); } });
+if (window.CS_XR) window.CS_XR.init({ settings: function () { return S; }, save: saveSettings, toast: toast,
+	erp: function () { return ERP && ERP.shared; }, erpReady: function () { return ERP && ERP.ready ? ERP.ready() : "ERPNext is not set up."; },
+	saveFile: function (name, b64, mime) { return A.saveToDocuments(name, b64, mime); } });
 paintCountryList();
 paintSettings();
 paintCount();

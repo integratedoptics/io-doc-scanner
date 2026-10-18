@@ -15,12 +15,23 @@ Then tag the commit `vX.Y.Z`. How the apps pick the update up: `docs/MOBILE-UPDA
 
 | Version | versionCode / build |
 |---|---|
+| 1.8.0 | 11 |
 | 1.7.2 | 10 |
 | 1.7.1 | 9 |
 | 1.7.0 | 8 |
 | 1.6.0 | 7 |
 | 1.5.0 | 6 |
 | 1.4 | 5 |
+
+## 1.8.0
+
+**All four apps — Export: Sales invoices → XRechnung.**
+New card on the Export screen. It lists the submitted Sales Invoices of the series **IOG** (changeable), checks what XRechnung
+needs (Leitweg-ID from the invoice field `leitweg_id`, seller contact, buyer e-mail, bank, VAT category for 0 % lines, totals
+against ERPNext), lets you fill in what is missing, and writes one **XRechnung 3.0 UBL** file per invoice (credit notes as UBL
+CreditNote) to Documents/CardScanner, optionally also attaching it to the Sales Invoice in ERPNext. Tested with an offline
+EN 16931 / XRechnung rule validator; validate the first real file with the KoSIT validator or the authority's portal before
+sending. See `docs/XRECHNUNG.md`.
 
 ## 1.7.2
 

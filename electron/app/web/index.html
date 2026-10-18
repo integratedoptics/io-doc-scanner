@@ -243,6 +243,11 @@ summary{font-size:13px;color:var(--dgrey);cursor:pointer}
 .dvpages.dv-pan{cursor:grab}
 .dvpages.dv-pan.dv-grab{cursor:grabbing}
 .dvpages img,.dvpages canvas{-webkit-user-drag:none;user-drag:none}
+/* Sales invoices -> XRechnung (Export screen; built by xrechnung.js) */
+.xr-tab{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0}
+.xr-tab th{text-align:left;color:var(--dim);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--line)}
+.xr-tab td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+#card-xr .row{flex-wrap:wrap}#card-xr .row .f{flex:1 1 150px}
 /* Zoho Mail attachments (desktop app only; the panel is built by zohomail.js) */
 #zm-panel{display:none;position:fixed;inset:0;z-index:60;background:rgba(29,29,27,.45);align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto}
 .zm-box{background:var(--white);border-radius:16px;width:100%;max-width:820px;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
@@ -468,6 +473,7 @@ details.viewcard>summary{font-size:11px;text-transform:uppercase;letter-spacing:
       <button class="b" id="btn-sync-all">Sync selected cards</button>
       <p class="hint">Set the address and the credentials in Settings first. Duplicates are skipped, and anything ERPNext refuses is listed with the field that has to be fixed by hand.</p>
     </div>
+    <div class="card" id="card-xr"></div>
     <div class="card">
       <h2 class="v">Housekeeping</h2>
       <button class="b sec" id="btn-mark">Mark selected as exported</button>
@@ -903,6 +909,7 @@ details.viewcard>summary{font-size:11px;text-transform:uppercase;letter-spacing:
 <script src="docview.js"></script>
 <script src="review.js"></script>
 <script src="zohomail.js"></script>
+<script src="xrechnung.js"></script>
 <script src="docscan.js"></script>
 <script src="updates.js"></script>
 <script src="app.js"></script>

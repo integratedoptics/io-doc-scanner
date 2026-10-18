@@ -2,8 +2,8 @@
 
 Two ZIPs, pick the one for your Mac:
 
-- `IO Doc Scanner-1.7.2-arm64-mac.zip` — Apple Silicon (M1/M2/M3/M4/M5)
-- `IO Doc Scanner-1.7.2-mac.zip` — Intel Macs
+- `IO Doc Scanner-1.8.0-arm64-mac.zip` — Apple Silicon (M1/M2/M3/M4/M5)
+- `IO Doc Scanner-1.8.0-mac.zip` — Intel Macs
 
 1. Double-click the ZIP; it unpacks `IO Doc Scanner.app`. Drag it to Applications.
 2. The app is **not signed or notarized**, so macOS blocks the first start. Either right-click the app → **Open** → **Open**, or in Terminal run:
